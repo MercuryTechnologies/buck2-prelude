@@ -578,6 +578,7 @@ def _build_haskell_lib(
         ctx.actions.run(
             link,
             category = "haskell_link" + artifact_suffix.replace("-", "_"),
+            allow_cache_upload = True,
         )
 
         solibs[libfile] = LinkedObject(output = lib, unstripped_output = lib)
@@ -1228,7 +1229,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     else:
         link.add(cmd_args(unpack_link_args(infos), prepend = "-optl"))
 
-    ctx.actions.run(link, category = "haskell_link")
+    ctx.actions.run(link, category = "haskell_link", allow_cache_upload = True)
 
     run = cmd_args(output)
 

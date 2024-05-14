@@ -583,7 +583,8 @@ def _compile_module(
         compile_cmd, category = "haskell_compile_" + artifact_suffix.replace("-", "_"), identifier = module_name,
         dep_files = {
             "abi": abi_tag,
-        }
+        },
+        allow_cache_upload = True,
     )
 
     object = module.objects[-1]
