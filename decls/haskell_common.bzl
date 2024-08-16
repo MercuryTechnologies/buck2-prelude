@@ -64,7 +64,7 @@ def _scripts_arg():
 
 def _external_tools_arg():
     return {
-        "external_tools": attrs.list(attrs.string(), default = [], doc = """
+        "external_tools": attrs.list(attrs.dep(providers = [RunInfo]), default = [], doc = """
     External executables called from Haskell compiler during preprocessing or compilation.
 """),
     }
