@@ -546,7 +546,6 @@ def _compile_module(
 
     src_envs = ctx.attrs.srcs_envs.get(module.source)
     if src_envs:
-        #env_strs = ["{}={}".format(k, v) for k, v in src_envs]
         for k, v in src_envs:
             compile_args_for_file.add(cmd_args(
                 k,
