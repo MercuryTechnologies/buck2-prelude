@@ -85,6 +85,7 @@ def main():
 
     extra_env_keys = [str(k) for k in args.extra_env_key]
     extra_env_values = [str(v) for v in args.extra_env_value]
+    assert len(extra_env_keys) == len(extra_env_values), "number of --extra-env-key and --extra-env-value flags must match"
     n_extra_env = len(extra_env_keys)
     if n_extra_env > 0:
         for i in range(0, n_extra_env):
