@@ -132,11 +132,7 @@ def recompute_abi_hash(ghc, abi_out):
     hi_file = abi_out.with_suffix("")
 
     cmd = [ghc, "--show-iface-abi-hash", hi_file]
-    for line in subprocess.check_output(cmd, text=True):
-        hash = line[0]
-        with open(abi_out, "w") as outfile:
-            print(hash, file=outfile)
-        return
+    return subprocess.check_output(cmd, text=True).split(maxsplit=1)[0]
     raise RuntimeError("ABI hash not found in ghc output")
 
 
