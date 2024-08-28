@@ -142,7 +142,7 @@ def determine_module_mapping(ghc_depends, source_prefix):
             if len(boot_sources) != 1:
                 raise RuntimeError(f"Expected at most one Haskell boot file for module '{modname}' but got '{boot_sources}'.")
 
-            boot_apparent_name = src_to_module_name(strip_prefix_(source_prefix, sources[0]).lstrip("/")) + "-boot"
+            boot_apparent_name = src_to_module_name(strip_prefix_(source_prefix, boot_sources[0].replace(".hs-boot", ".hs")).lstrip("/")) + "-boot"
 
             if boot_apparent_name != boot_modname:
                 result[boot_apparent_name] = boot_modname
