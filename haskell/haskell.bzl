@@ -450,11 +450,7 @@ def _make_package(
 
         source_prefixes = get_source_prefixes(ctx.attrs.srcs, module_map)
 
-        modules = [
-            module
-            for module in md["module_graph"].keys()
-            if not module.endswith("-boot")
-        ]
+        modules = filter(lambda x: not (x.endswith("-boot")), md["module_graph"].keys())
 
         # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
         #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
