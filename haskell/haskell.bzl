@@ -592,7 +592,7 @@ def _build_haskell_lib(
             if not object.extension.endswith("-boot")
         ]
 
-        def do_link(ctx, _artifacts, resolved, outputs, lib=lib, objects=objects):
+        def add_common_flags(link, ctx, resolved, outputs, lib):
             pkg_deps = resolved[haskell_toolchain.packages.dynamic]
             package_db = pkg_deps[DynamicHaskellPackageDbInfo].packages
 
@@ -601,13 +601,15 @@ def _build_haskell_lib(
                 children = [package_db[name] for name in toolchain_libs if name in package_db]
             )
 
-            link = cmd_args(haskell_toolchain.linker)
+
             link.add(haskell_toolchain.linker_flags)
             link.add(ctx.attrs.linker_flags)
             link.add("-hide-all-packages")
             link.add(cmd_args(toolchain_libs, prepend = "-package"))
             link.add(cmd_args(package_db_tset.project_as_args("package_db"), prepend="-package-db"))
+
             link.add("-o", outputs[lib].as_output())
+
             link.add(
                 get_shared_library_flags(linker_info.type),
                 "-dynamic",
@@ -617,8 +619,6 @@ def _build_haskell_lib(
                 ),
             )
 
-            link.add(objects)
-
             infos = get_link_args_for_strategy(
                 ctx,
                 nlis,
@@ -626,18 +626,51 @@ def _build_haskell_lib(
             )
             link.add(cmd_args(unpack_link_args(infos), prepend = "-optl"))
 
-            ctx.actions.run(
-                link,
-                category = "haskell_link" + artifact_suffix.replace("-", "_"),
+
+
+        if(ctx.attrs.use_response_file_for_linker):
+            rsp_file = ctx.actions.declare_output("link.rsp")
+            ctx.actions.write(
+                rsp_file.as_output(),
+                cmd_args(objects),
+                allow_args = True,
+                with_inputs = True,
             )
 
-        ctx.actions.dynamic_output(
-            dynamic = [],
-            promises = [haskell_toolchain.packages.dynamic],
-            inputs = objects,
-            outputs = [lib.as_output()],
-            f = do_link,
-        )
+            def do_link_with_response_file(ctx, _artifacts, resolved, outputs, lib=lib, rsp_file=rsp_file):
+                link = cmd_args(haskell_toolchain.linker)
+                link.add(cmd_args(rsp_file, format = "@{}"))
+                add_common_flags(link, ctx, resolved, outputs, lib)
+                ctx.actions.run(
+                    link,
+                    category = "haskell_link" + artifact_suffix.replace("-", "_"),
+                )
+
+            ctx.actions.dynamic_output(
+                dynamic = [],
+                promises = [haskell_toolchain.packages.dynamic],
+                inputs = [rsp_file],
+                outputs = [lib.as_output()],
+                f = do_link_with_response_file,
+            )
+
+        else:
+            def do_link_without_response_file(ctx, _artifacts, resolved, outputs, lib=lib, objects=objects):
+                link = cmd_args(haskell_toolchain.linker)
+                link.add(objects)
+                add_common_flags(link, ctx, resolved, outputs, lib)
+                ctx.actions.run(
+                    link,
+                    category = "haskell_link" + artifact_suffix.replace("-", "_"),
+                )
+
+            ctx.actions.dynamic_output(
+                dynamic = [],
+                promises = [haskell_toolchain.packages.dynamic],
+                inputs = objects,
+                outputs = [lib.as_output()],
+                f = do_link_without_response_file,
+            )
 
         solibs[libfile] = LinkedObject(output = lib, unstripped_output = lib)
         libs = [lib]
