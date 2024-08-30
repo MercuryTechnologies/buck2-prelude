@@ -633,13 +633,13 @@ def _build_haskell_lib(
             ctx.actions.write(
                 rsp_file.as_output(),
                 cmd_args(objects),
-                allow_args = True,
                 with_inputs = True,
             )
 
             def do_link_with_response_file(ctx, _artifacts, resolved, outputs, lib=lib, rsp_file=rsp_file):
                 link = cmd_args(haskell_toolchain.linker)
                 link.add(cmd_args(rsp_file, format = "@{}"))
+                link.hidden(objects)
                 add_common_flags(link, ctx, resolved, outputs, lib)
                 ctx.actions.run(
                     link,
