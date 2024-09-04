@@ -13,7 +13,6 @@ load(
     "project_artifacts",
 )
 load("@prelude//apple:apple_error_handler.bzl", "apple_build_error_handler")
-load("@prelude//apple:apple_target_sdk_version.bzl", "get_versioned_target_triple")
 load("@prelude//apple:apple_toolchain_types.bzl", "AppleToolchainInfo")
 load("@prelude//apple:apple_utility.bzl", "get_disable_pch_validation_flags", "get_module_name")
 load("@prelude//apple:modulemap.bzl", "preprocessor_info_for_modulemap")
@@ -39,6 +38,7 @@ load(
     "cxx_inherited_preprocessor_infos",
     "cxx_merge_cpreprocessors",
 )
+load("@prelude//cxx:target_sdk_version.bzl", "get_target_triple")
 load(
     "@prelude//linking:link_info.bzl",
     "LinkInfo",  # @unused Used as a type
@@ -182,7 +182,7 @@ def get_swift_cxx_flags(ctx: AnalysisContext) -> list[str]:
 
     # Each target needs to propagate the compilers target triple.
     # This can vary depending on the deployment target of each library.
-    gather += ["-target", get_versioned_target_triple(ctx)]
+    gather += ["-target", get_target_triple(ctx)]
 
     for f in ctx.attrs.swift_compiler_flags:
         if next:
@@ -534,7 +534,7 @@ def _get_shared_flags(
         "-sdk",
         toolchain.sdk_path,
         "-target",
-        get_versioned_target_triple(ctx),
+        get_target_triple(ctx),
         "-module-name",
         module_name,
         "-Xfrontend",

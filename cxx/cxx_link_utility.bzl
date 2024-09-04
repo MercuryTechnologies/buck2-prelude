@@ -14,7 +14,7 @@ load(
 )
 load("@prelude//cxx:debug.bzl", "SplitDebugMode")
 load("@prelude//cxx:linker.bzl", "get_rpath_origin")
-load("@prelude//cxx:target_sdk_version.bzl", "get_target_sdk_version_linker_flags")
+load("@prelude//cxx:target_sdk_version.bzl", "get_target_sdk_version_flags")
 load(
     "@prelude//linking:link_info.bzl",
     "LinkArgs",
@@ -105,7 +105,7 @@ def make_link_args(
     if linker_type == LinkerType("darwin"):
         # Darwin requires a target triple specified to
         # control the deployment target being linked for.
-        args.add(get_target_sdk_version_linker_flags(ctx))
+        args.add(get_target_sdk_version_flags(ctx))
 
         # On Apple platforms, DWARF data is contained in the object files
         # and executables contains paths to the object files (N_OSO stab).
