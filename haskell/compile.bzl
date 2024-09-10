@@ -404,7 +404,7 @@ CommonCompileModuleArgs = record(
 def _common_compile_module_args(
     actions: AnalysisActions,
     *,
-    compiler_flags: list[str],
+    compiler_flags: list,
     ghc_wrapper: RunInfo,
     haskell_toolchain: HaskellToolchainInfo,
     resolved: dict[DynamicValue, ResolvedDynamicValue],
