@@ -431,6 +431,7 @@ def _common_compile_module_args(
 ) -> CommonCompileModuleArgs:
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
+    command.add("--ghc-dir", haskell_toolchain.ghc_dir)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
@@ -691,6 +692,7 @@ def _compile_module(
     compile_cmd.add("-fwrite-if-simplified-core")
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
+        compile_cmd.add("-fpackage-db-byte-code")
 
     compile_cmd.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
 
