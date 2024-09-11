@@ -141,34 +141,34 @@ instance HsJSONPB.ToJSON ExecuteCommand where
 instance HsJSONPB.FromJSON ExecuteCommand where
         parseJSON = HsJSONPB.parseJSONPB
  
-instance HsJSONPB.ToSchema ExecuteCommand where
-        declareNamedSchema _
-          = do let declare_argv = HsJSONPB.declareSchemaRef
-               executeCommandArgv <- declare_argv Proxy.Proxy
-               let declare_env = HsJSONPB.declareSchemaRef
-               executeCommandEnv <- declare_env Proxy.Proxy
-               let _ = Hs.pure ExecuteCommand <*>
-                         (HsProtobuf.coerceOver
-                            @(HsProtobuf.UnpackedVec (HsProtobuf.Bytes Hs.ByteString))
-                            @(Hs.Vector Hs.ByteString)
-                            (HsJSONPB.asProxy declare_argv))
-                         <*>
-                         (HsProtobuf.coerceOver
-                            @(HsProtobuf.NestedVec Worker.ExecuteCommand_EnvironmentEntry)
-                            @(Hs.Vector Worker.ExecuteCommand_EnvironmentEntry)
-                            (HsJSONPB.asProxy declare_env))
-               Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteCommand",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList
-                                                       [("argv", executeCommandArgv),
-                                                        ("env", executeCommandEnv)]}})
- 
+-- instance HsJSONPB.ToSchema ExecuteCommand where
+--         declareNamedSchema _
+--           = do let declare_argv = HsJSONPB.declareSchemaRef
+--                executeCommandArgv <- declare_argv Proxy.Proxy
+--                let declare_env = HsJSONPB.declareSchemaRef
+--                executeCommandEnv <- declare_env Proxy.Proxy
+--                let _ = Hs.pure ExecuteCommand <*>
+--                          (HsProtobuf.coerceOver
+--                             @(HsProtobuf.UnpackedVec (HsProtobuf.Bytes Hs.ByteString))
+--                             @(Hs.Vector Hs.ByteString)
+--                             (HsJSONPB.asProxy declare_argv))
+--                          <*>
+--                          (HsProtobuf.coerceOver
+--                             @(HsProtobuf.NestedVec Worker.ExecuteCommand_EnvironmentEntry)
+--                             @(Hs.Vector Worker.ExecuteCommand_EnvironmentEntry)
+--                             (HsJSONPB.asProxy declare_env))
+--                Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteCommand",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList
+--                                                        [("argv", executeCommandArgv),
+--                                                         ("env", executeCommandEnv)]}})
+--
 data ExecuteCommand_EnvironmentEntry = ExecuteCommand_EnvironmentEntry{executeCommand_EnvironmentEntryKey
                                                                        :: Hs.ByteString,
                                                                        executeCommand_EnvironmentEntryValue
@@ -256,33 +256,33 @@ instance HsJSONPB.ToJSON ExecuteCommand_EnvironmentEntry where
 instance HsJSONPB.FromJSON ExecuteCommand_EnvironmentEntry where
         parseJSON = HsJSONPB.parseJSONPB
  
-instance HsJSONPB.ToSchema ExecuteCommand_EnvironmentEntry where
-        declareNamedSchema _
-          = do let declare_key = HsJSONPB.declareSchemaRef
-               executeCommand_EnvironmentEntryKey <- declare_key Proxy.Proxy
-               let declare_value = HsJSONPB.declareSchemaRef
-               executeCommand_EnvironmentEntryValue <- declare_value Proxy.Proxy
-               let _ = Hs.pure ExecuteCommand_EnvironmentEntry <*>
-                         (HsProtobuf.coerceOver @(HsProtobuf.Bytes Hs.ByteString)
-                            @(Hs.ByteString)
-                            (HsJSONPB.asProxy declare_key))
-                         <*>
-                         (HsProtobuf.coerceOver @(HsProtobuf.Bytes Hs.ByteString)
-                            @(Hs.ByteString)
-                            (HsJSONPB.asProxy declare_value))
-               Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteCommand_EnvironmentEntry",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList
-                                                       [("key", executeCommand_EnvironmentEntryKey),
-                                                        ("value",
-                                                         executeCommand_EnvironmentEntryValue)]}})
- 
+-- instance HsJSONPB.ToSchema ExecuteCommand_EnvironmentEntry where
+--         declareNamedSchema _
+--           = do let declare_key = HsJSONPB.declareSchemaRef
+--                executeCommand_EnvironmentEntryKey <- declare_key Proxy.Proxy
+--                let declare_value = HsJSONPB.declareSchemaRef
+--                executeCommand_EnvironmentEntryValue <- declare_value Proxy.Proxy
+--                let _ = Hs.pure ExecuteCommand_EnvironmentEntry <*>
+--                          (HsProtobuf.coerceOver @(HsProtobuf.Bytes Hs.ByteString)
+--                             @(Hs.ByteString)
+--                             (HsJSONPB.asProxy declare_key))
+--                          <*>
+--                          (HsProtobuf.coerceOver @(HsProtobuf.Bytes Hs.ByteString)
+--                             @(Hs.ByteString)
+--                             (HsJSONPB.asProxy declare_value))
+--                Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteCommand_EnvironmentEntry",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList
+--                                                        [("key", executeCommand_EnvironmentEntryKey),
+--                                                         ("value",
+--                                                          executeCommand_EnvironmentEntryValue)]}})
+--
 data ExecuteResponse = ExecuteResponse{executeResponseExitCode ::
                                        Hs.Int32,
                                        executeResponseStderr :: Hs.Text}
@@ -352,29 +352,29 @@ instance HsJSONPB.ToJSON ExecuteResponse where
 instance HsJSONPB.FromJSON ExecuteResponse where
         parseJSON = HsJSONPB.parseJSONPB
  
-instance HsJSONPB.ToSchema ExecuteResponse where
-        declareNamedSchema _
-          = do let declare_exit_code = HsJSONPB.declareSchemaRef
-               executeResponseExitCode <- declare_exit_code Proxy.Proxy
-               let declare_stderr = HsJSONPB.declareSchemaRef
-               executeResponseStderr <- declare_stderr Proxy.Proxy
-               let _ = Hs.pure ExecuteResponse <*>
-                         HsJSONPB.asProxy declare_exit_code
-                         <*>
-                         (HsProtobuf.coerceOver @(HsProtobuf.String Hs.Text) @(Hs.Text)
-                            (HsJSONPB.asProxy declare_stderr))
-               Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteResponse",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList
-                                                       [("exit_code", executeResponseExitCode),
-                                                        ("stderr", executeResponseStderr)]}})
- 
+-- instance HsJSONPB.ToSchema ExecuteResponse where
+--         declareNamedSchema _
+--           = do let declare_exit_code = HsJSONPB.declareSchemaRef
+--                executeResponseExitCode <- declare_exit_code Proxy.Proxy
+--                let declare_stderr = HsJSONPB.declareSchemaRef
+--                executeResponseStderr <- declare_stderr Proxy.Proxy
+--                let _ = Hs.pure ExecuteResponse <*>
+--                          HsJSONPB.asProxy declare_exit_code
+--                          <*>
+--                          (HsProtobuf.coerceOver @(HsProtobuf.String Hs.Text) @(Hs.Text)
+--                             (HsJSONPB.asProxy declare_stderr))
+--                Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteResponse",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList
+--                                                        [("exit_code", executeResponseExitCode),
+--                                                         ("stderr", executeResponseStderr)]}})
+--
 data ExecuteCancel = ExecuteCancel{}
                    deriving (Hs.Show, Hs.Eq, Hs.Ord, Hs.Generic)
  
@@ -406,18 +406,18 @@ instance HsJSONPB.ToJSON ExecuteCancel where
 instance HsJSONPB.FromJSON ExecuteCancel where
         parseJSON = HsJSONPB.parseJSONPB
  
-instance HsJSONPB.ToSchema ExecuteCancel where
-        declareNamedSchema _
-          = do Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteCancel",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList []}})
- 
+-- instance HsJSONPB.ToSchema ExecuteCancel where
+--         declareNamedSchema _
+--           = do Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteCancel",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList []}})
+--
 newtype ExecuteEvent = ExecuteEvent{executeEventData ::
                                     Hs.Maybe ExecuteEventData}
                        deriving (Hs.Show, Hs.Eq, Hs.Ord, Hs.Generic)
@@ -512,22 +512,22 @@ instance HsJSONPB.ToJSON ExecuteEvent where
 instance HsJSONPB.FromJSON ExecuteEvent where
         parseJSON = HsJSONPB.parseJSONPB
  
-instance HsJSONPB.ToSchema ExecuteEvent where
-        declareNamedSchema _
-          = do let declare_data = HsJSONPB.declareSchemaRef
-               executeEventData <- declare_data Proxy.Proxy
-               let _ = Hs.pure ExecuteEvent <*> HsJSONPB.asProxy declare_data
-               Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteEvent",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList
-                                                       [("data", executeEventData)]}})
- 
+-- instance HsJSONPB.ToSchema ExecuteEvent where
+--         declareNamedSchema _
+--           = do let declare_data = HsJSONPB.declareSchemaRef
+--                executeEventData <- declare_data Proxy.Proxy
+--                let _ = Hs.pure ExecuteEvent <*> HsJSONPB.asProxy declare_data
+--                Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteEvent",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList
+--                                                        [("data", executeEventData)]}})
+--
 data ExecuteEventData = ExecuteEventDataCommand Worker.ExecuteCommand
                       | ExecuteEventDataCancel Worker.ExecuteCancel
                       deriving (Hs.Show, Hs.Eq, Hs.Ord, Hs.Generic)
@@ -537,30 +537,30 @@ instance Hs.NFData ExecuteEventData
 instance HsProtobuf.Named ExecuteEventData where
         nameOf _ = (Hs.fromString "ExecuteEventData")
  
-instance HsJSONPB.ToSchema ExecuteEventData where
-        declareNamedSchema _
-          = do let declare_command = HsJSONPB.declareSchemaRef
-               executeEventDataCommand <- declare_command Proxy.Proxy
-               let _ = Hs.pure ExecuteEventDataCommand <*>
-                         HsJSONPB.asProxy declare_command
-               let declare_cancel = HsJSONPB.declareSchemaRef
-               executeEventDataCancel <- declare_cancel Proxy.Proxy
-               let _ = Hs.pure ExecuteEventDataCancel <*>
-                         HsJSONPB.asProxy declare_cancel
-               Hs.return
-                 (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
-                                         Hs.Just "ExecuteEventData",
-                                       HsJSONPB._namedSchemaSchema =
-                                         Hs.mempty{HsJSONPB._schemaParamSchema =
-                                                     Hs.mempty{HsJSONPB._paramSchemaType =
-                                                                 Hs.Just HsJSONPB.SwaggerObject},
-                                                   HsJSONPB._schemaProperties =
-                                                     HsJSONPB.insOrdFromList
-                                                       [("command", executeEventDataCommand),
-                                                        ("cancel", executeEventDataCancel)],
-                                                   HsJSONPB._schemaMinProperties = Hs.Just 1,
-                                                   HsJSONPB._schemaMaxProperties = Hs.Just 1}})
- 
+-- instance HsJSONPB.ToSchema ExecuteEventData where
+--         declareNamedSchema _
+--           = do let declare_command = HsJSONPB.declareSchemaRef
+--                executeEventDataCommand <- declare_command Proxy.Proxy
+--                let _ = Hs.pure ExecuteEventDataCommand <*>
+--                          HsJSONPB.asProxy declare_command
+--                let declare_cancel = HsJSONPB.declareSchemaRef
+--                executeEventDataCancel <- declare_cancel Proxy.Proxy
+--                let _ = Hs.pure ExecuteEventDataCancel <*>
+--                          HsJSONPB.asProxy declare_cancel
+--                Hs.return
+--                  (HsJSONPB.NamedSchema{HsJSONPB._namedSchemaName =
+--                                          Hs.Just "ExecuteEventData",
+--                                        HsJSONPB._namedSchemaSchema =
+--                                          Hs.mempty{HsJSONPB._schemaParamSchema =
+--                                                      Hs.mempty{HsJSONPB._paramSchemaType =
+--                                                                  Hs.Just HsJSONPB.SwaggerObject},
+--                                                    HsJSONPB._schemaProperties =
+--                                                      HsJSONPB.insOrdFromList
+--                                                        [("command", executeEventDataCommand),
+--                                                         ("cancel", executeEventDataCancel)],
+--                                                    HsJSONPB._schemaMinProperties = Hs.Just 1,
+--                                                    HsJSONPB._schemaMaxProperties = Hs.Just 1}})
+--
 data Worker request response = Worker{workerExecute ::
                                       request 'HsGRPC.Normal Worker.ExecuteCommand
                                         Worker.ExecuteResponse

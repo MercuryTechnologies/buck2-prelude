@@ -19,70 +19,79 @@
 
 module Main where
 
+import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Exception (AsyncException (..), Exception (..), IOException, throwIO)
 import qualified Control.Monad.Catch as MC
 import Control.Monad.IO.Class (liftIO)
-import Data.ByteString (ByteString)
+import Data.Foldable (for_, traverse_)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Int (Int32)
-import Data.List (isPrefixOf, partition)
+import Data.List (dropWhileEnd)
 import Data.String (fromString)
-import qualified Data.Text as T
+import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8Lenient)
-import Data.Foldable (for_)
-import qualified Data.Vector as V
+import qualified Data.Text.Lazy as LazyText
+import qualified Data.Vector as Vector
 import qualified GHC
-import GHC (DynFlags, Ghc, GhcException (..), Phase, parseTargetFiles)
+import GHC (
+  DynFlags (..),
+  Ghc,
+  GhcException (..),
+  GhcLink (LinkBinary),
+  GhcMode (OneShot),
+  Phase,
+  Severity (SevIgnore),
+  getSessionDynFlags,
+  parseTargetFiles,
+  prettyPrintGhcErrors,
+  pushLogHookM,
+  setSessionDynFlags,
+  )
 import GHC.Driver.Config.Diagnostic
 import GHC.Driver.Config.Logger (initLogFlags)
 import GHC.Driver.Env (HscEnv (..))
 import GHC.Driver.Errors (printOrThrowDiagnostics)
 import GHC.Driver.Errors.Types (DriverMessages, GhcMessage (GhcDriverMessage))
-import GHC.Driver.Main (initHscEnv)
-import GHC.Driver.Monad (Session (..))
+import GHC.Driver.Monad (modifySession, withSession)
 import GHC.Driver.Phases (StopPhase (NoStop))
 import GHC.Driver.Pipeline (oneShot)
-import GHC.Driver.Session (
-  FlushOut (..),
-  defaultFatalMessager,
-  defaultFlushOut,
-  initialUnique,
-  targetProfile,
-  uniqueIncrement,
-  )
+import GHC.Driver.Session (FlushOut (..), defaultFatalMessager, defaultFlushOut, targetProfile)
 import GHC.Iface.Binary (CheckHiWay (IgnoreHiWay), TraceBinIFace (QuietBinIFace), readBinIface)
+import GHC.Runtime.Interpreter (Interp)
 import GHC.Runtime.Loader (initializeSessionPlugins)
+import GHC.Types.Error (MessageClass (..), getCaretDiagnostic, mkLocMessageWarningGroups)
 import GHC.Types.SourceError (SourceError)
 import GHC.Types.SrcLoc (Located, mkGeneralLocated, unLoc)
 import GHC.Types.Unique.Supply (initUniqSupply)
 import GHC.Unit.Module.ModIface (mi_final_exts, mi_mod_hash)
-import GHC.Utils.Logger (Logger, getLogger, log_default_dump_context, setLogFlags)
-import GHC.Utils.Outputable (ppr, renderWithContext)
+import GHC.Utils.Logger (LogAction, LogFlags (..), Logger, getLogger, log_default_dump_context, setLogFlags)
+import GHC.Utils.Outputable (
+  blankLine,
+  empty,
+  getPprStyle,
+  ppr,
+  renderWithContext,
+  setStyleColoured,
+  text,
+  withPprStyle,
+  ($$),
+  ($+$),
+  )
 import Network.GRPC.HighLevel.Generated
+import Prelude hiding (log)
 import System.Environment (getProgName, lookupEnv)
 import System.Exit (ExitCode)
-import System.FilePath (dropExtension, takeDirectory)
+import System.FilePath (dropExtension)
 import System.IO (BufferMode (LineBuffering), hPutStrLn, hSetBuffering, stderr, stdout)
 import Worker
-
-options :: ServiceOptions
-options = defaultServiceOptions
-
-handlers :: IORef (Maybe Session) -> Worker ServerRequest ServerResponse
-handlers session =
-  Worker
-    { workerExecute = executeHandler session,
-      workerExec = execHandler
-    }
 
 data Args =
   Args {
     abiOut :: Maybe String,
-    binPaths :: [String],
     buck2Dep :: Maybe String,
     buck2PackageDb :: [String],
     buck2PackageDbDep :: Maybe String,
-    ghcDir :: Maybe String,
+    ghcDirFile :: Maybe String,
     ghcOptions :: [String]
   }
   deriving stock (Eq, Show)
@@ -91,28 +100,25 @@ emptyArgs :: Args
 emptyArgs =
   Args {
     abiOut = Nothing,
-    binPaths = [],
     buck2Dep = Nothing,
     buck2PackageDb = [],
     buck2PackageDbDep = Nothing,
-    ghcDir = Nothing,
+    ghcDirFile = Nothing,
     ghcOptions = []
   }
 
-parseBuckArgs :: V.Vector ByteString -> Either String Args
+parseBuckArgs :: [String] -> Either String Args
 parseBuckArgs =
-  spin emptyArgs .
-  fmap (T.unpack . decodeUtf8Lenient) .
-  V.toList
+  spin emptyArgs
   where
     spin Args {..} = \case
       "--abi-out" : rest -> takeArg "--abi-out" rest \ v -> Args {abiOut = Just v, ..}
       "--buck2-dep" : rest -> takeArg "--buck2-dep" rest \ v -> Args {buck2Dep = Just v, ..}
       "--buck2-packagedb" : rest -> takeArg "--buck2-packagedb" rest \ v -> Args {buck2PackageDb = v : buck2PackageDb, ..}
       "--buck2-packagedb-dep" : rest -> takeArg "--buck2-packagedb-dep" rest \ v -> Args {buck2PackageDbDep = Just v, ..}
-      "--ghc" : rest -> takeArg "--ghc" rest \ ghc -> Args {ghcOptions = [], ghcDir = Just (takeDirectory (takeDirectory ghc)), ..}
-      "--bin-path" : rest -> takeArg "--bin-path" rest \ path -> Args {binPaths = path : binPaths, ..}
-      "-c" : rest -> spin Args {ghcOptions = "-no-link" : ghcOptions, ..} rest
+      "--ghc" : rest -> takeArg "--ghc" rest \ _ -> Args {ghcOptions = [], ..}
+      "--ghc-dir" : rest -> takeArg "--ghc-dir" rest \ f -> Args {ghcOptions = [], ghcDirFile = Just f, ..}
+      "-c" : rest -> spin Args {ghcOptions = ghcOptions, ..} rest
       arg : rest -> spin Args {ghcOptions = arg : ghcOptions, ..} rest
       [] -> Right Args {ghcOptions = reverse ghcOptions, ..}
 
@@ -158,43 +164,120 @@ handleExceptions errResult =
     fm = liftIO . defaultFatalMessager
     FlushOut flushOut = defaultFlushOut
 
-data CompileResult =
-  CompileResult {
-    abiHash :: Maybe (String, String)
+data AbiHash =
+  AbiHash {
+    path :: String,
+    hash :: String
   }
   deriving stock (Eq, Show)
 
-runSession :: Args -> ([Located String] -> Ghc (Maybe a)) -> IO (Maybe a)
-runSession args prog =
-  GHC.runGhc mbMinusB (handleExceptions Nothing (prog argv2))
+data CompileResult =
+  CompileResult {
+    abiHash :: Maybe AbiHash
+  }
+  deriving stock (Eq, Show)
+
+data Cache =
+  Cache {
+    interp :: Interp
+  }
+
+type CacheRef = IORef (Maybe Cache)
+
+withCache :: CacheRef -> Ghc a -> Ghc a
+withCache cache prog = do
+  restoreCache
+  prog <* updateCache
   where
-    argv0 = foldMap (\ d -> ["-B" ++ d ++ "/lib/ghc-9.8.2/lib"]) args.ghcDir ++ args.ghcOptions
-    (minusB_args, argv1) = partition ("-B" `isPrefixOf`) argv0
-    mbMinusB | null minusB_args = Nothing
-             | otherwise = Just (drop 2 (last minusB_args))
-    argv2 = map (mkGeneralLocated "on the commandline") argv1
+    restoreCache =
+      liftIO (readIORef cache) >>= traverse_ \ Cache {interp} ->
+        modifySession \ env -> env {hsc_interp = Just interp}
+
+    updateCache =
+      withSession \ HscEnv {hsc_interp} ->
+        for_ hsc_interp \ interp ->
+          liftIO $ writeIORef cache (Just Cache {interp})
+
+runSession :: Args -> ([Located String] -> Ghc (Maybe a)) -> IO (Maybe a)
+runSession args prog = do
+  topdir <- readPath args.ghcDirFile
+  GHC.runGhc topdir do
+    handleExceptions Nothing (prog (map loc args.ghcOptions))
+  where
+    readPath = fmap (fmap (dropWhileEnd ('\n' ==))) . traverse readFile
+    loc = mkGeneralLocated "by Buck2"
 
 parseFlags :: [Located String] -> Ghc (DynFlags, Logger, [Located String], DriverMessages)
 parseFlags argv = do
   dflags0 <- GHC.getSessionDynFlags
+  let dflags1 = dflags0 {ghcMode = OneShot, ghcLink = LinkBinary, verbosity = 1}
   logger1 <- getLogger
-  let logger2 = setLogFlags logger1 (initLogFlags dflags0)
-  (dflags, fileish_args, dynamicFlagWarnings) <- GHC.parseDynamicFlags logger2 dflags0 argv
+  let logger2 = setLogFlags logger1 (initLogFlags dflags1)
+  (dflags, fileish_args, dynamicFlagWarnings) <- GHC.parseDynamicFlags logger2 dflags1 argv
   pure (dflags, setLogFlags logger2 (initLogFlags dflags), fileish_args, dynamicFlagWarnings)
 
-withGhc :: Args -> ([(String, Maybe Phase)] -> Ghc (Maybe a)) -> IO (Maybe a)
-withGhc args prog =
+data Log =
+  Log {
+    diagnostics :: [String],
+    other :: [String]
+  }
+  deriving stock (Eq, Show)
+
+data Env =
+  Env {
+    log :: MVar Log,
+    cache :: CacheRef,
+    args :: Args
+  }
+
+logToState :: MVar Log -> LogAction
+logToState logVar logflags msg_class srcSpan msg = case msg_class of
+  MCOutput -> logOther msg
+  MCDump -> logOther (msg $$ blankLine)
+  MCInteractive -> logOther msg
+  MCInfo -> logError msg
+  MCFatal -> logError msg
+  MCDiagnostic SevIgnore _ _ -> pure ()
+  MCDiagnostic _sev _rea _code -> printDiagnostics
+  where
+    message = mkLocMessageWarningGroups (log_show_warn_groups logflags) msg_class srcSpan msg
+
+    printDiagnostics = do
+      caretDiagnostic <-
+        if log_show_caret logflags
+        then getCaretDiagnostic msg_class srcSpan
+        else pure empty
+      logError $ getPprStyle $ \style ->
+        withPprStyle (setStyleColoured True style) (message $+$ caretDiagnostic $+$ blankLine)
+
+    logError =
+      logWith \ Log {diagnostics, other} new ->
+        Log {diagnostics = new : diagnostics, other}
+
+    logOther =
+      logWith \ Log {diagnostics, other} new ->
+        Log {diagnostics = diagnostics, other = new : other}
+
+    logWith f d =
+      modifyMVar_ logVar \ log ->
+        let new = renderWithContext (log_default_user_context logflags) (d $$ text "")
+        in pure (f log new)
+
+withGhc :: Env -> ([(String, Maybe Phase)] -> Ghc (Maybe a)) -> IO (Maybe a)
+withGhc Env {log, cache, args} prog =
   runSession args \ argv -> do
+    pushLogHookM (const (logToState log))
     (dflags0, logger, fileish_args, dynamicFlagWarnings) <- parseFlags argv
-    GHC.prettyPrintGhcErrors logger do
+    prettyPrintGhcErrors logger do
       let flagWarnings' = GhcDriverMessage <$> dynamicFlagWarnings
       liftIO $ printOrThrowDiagnostics logger (initPrintConfig dflags0) (initDiagOpts dflags0) flagWarnings'
       let (dflags1, srcs, _objs) = parseTargetFiles dflags0 (map unLoc fileish_args)
-      GHC.setSessionDynFlags dflags1
-      dflags <- GHC.getSessionDynFlags
+      setSessionDynFlags dflags1
+      dflags <- getSessionDynFlags
       liftIO $ initUniqSupply (initialUnique dflags) (uniqueIncrement dflags)
       initializeSessionPlugins
-      prog srcs
+      withCache cache do
+        prog srcs
 
 compile :: Args -> [(String, Maybe Phase)] -> Ghc (Maybe CompileResult)
 compile args srcs = do
@@ -203,10 +286,10 @@ compile args srcs = do
   abiHash <- readAbiHash hsc_env args.abiOut
   pure (Just CompileResult {abiHash})
   where
-    readAbiHash HscEnv {hsc_dflags, hsc_NC} (Just out) = do
-      let hi_file = dropExtension out
+    readAbiHash HscEnv {hsc_dflags, hsc_NC} (Just path) = do
+      let hi_file = dropExtension path
       iface <- liftIO $ readBinIface (targetProfile hsc_dflags) hsc_NC IgnoreHiWay QuietBinIFace hi_file
-      pure (Just (out, dump hsc_dflags (mi_mod_hash (mi_final_exts iface))))
+      pure (Just (AbiHash {path, hash = dump hsc_dflags (mi_mod_hash (mi_final_exts iface))}))
 
     readAbiHash _ _ = pure Nothing
 
@@ -216,7 +299,7 @@ writeResult :: Args -> Maybe CompileResult -> IO Int32
 writeResult args = \case
   Nothing -> pure 1
   Just CompileResult {abiHash} -> do
-    for_ abiHash \ (path, hash) -> writeFile path hash
+    for_ abiHash \ AbiHash {path, hash} -> writeFile path hash
     for_ args.buck2Dep \ path -> writeFile path "\n"
     for_ args.buck2PackageDbDep \ path ->
       case args.buck2PackageDb of
@@ -225,28 +308,25 @@ writeResult args = \case
     pure 0
 
 executeHandler ::
-  IORef (Maybe Session) ->
+  CacheRef ->
   ServerRequest Normal ExecuteCommand ExecuteResponse ->
   IO (ServerResponse Normal ExecuteResponse)
-executeHandler state (ServerNormalRequest _metadata (ExecuteCommand {executeCommandArgv, executeCommandEnv})) = do
-  hPutStrLn stderr (show executeCommandArgv)
-  print executeCommandArgv
-  print executeCommandEnv
-  -- session <- ensureSession
-  args <- either (throwIO . userError) pure (parseBuckArgs executeCommandArgv)
-  result <- withGhc args (compile args)
-  hPutStrLn stderr ("compiled: " ++ show result)
-  exitCode <- writeResult args result
-  pure (ServerNormalResponse (ExecuteResponse exitCode "") [] StatusOk "")
+executeHandler cache (ServerNormalRequest _ ExecuteCommand {executeCommandArgv}) = do
+  hPutStrLn stderr (unlines argv)
+  args <- either (throwIO . userError) pure (parseBuckArgs argv)
+  log <- newMVar Log {diagnostics = [], other = []}
+  result <- withGhc Env {log, cache, args} (compile args)
+  executeResponseExitCode <- writeResult args result
+  Log {diagnostics, other} <- readMVar log
+  traverse_ (hPutStrLn stderr) (reverse other)
+  let
+    response = ExecuteResponse {
+      executeResponseExitCode,
+      executeResponseStderr = mconcat (LazyText.pack <$> reverse diagnostics)
+      }
+  pure (ServerNormalResponse response [] StatusOk "")
   where
-    _ensureSession =
-      readIORef state >>= \case
-        Just s -> pure s
-        Nothing -> do
-          env0 <- initHscEnv Nothing
-          session <- Session <$> newIORef env0
-          writeIORef state (Just session)
-          pure session
+    argv = Text.unpack . decodeUtf8Lenient <$> Vector.toList executeCommandArgv
 
 execHandler ::
   ServerRequest ClientStreaming ExecuteEvent ExecuteResponse ->
@@ -255,18 +335,20 @@ execHandler (ServerReaderRequest _metadata _recv) = do
   hPutStrLn stderr "Received Exec"
   error "not implemented"
 
+handlers :: CacheRef -> Worker ServerRequest ServerResponse
+handlers cache =
+  Worker
+    { workerExecute = executeHandler cache,
+      workerExec = execHandler
+    }
+
 main :: IO ()
 main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
   socket <- lookupEnv "WORKER_SOCKET"
   hPutStrLn stderr $ "using worker socket: " <> show socket
-  state <- newIORef Nothing
-  let activeOptions =
-        maybe
-          options
-          ( \s ->
-              options {serverHost = fromString $ "unix://" <> s <> "\x00", serverPort = 0}
-          )
-          socket
-  workerServer (handlers state) activeOptions
+  cache <- newIORef Nothing
+  workerServer (handlers cache) (maybe id setSocket socket defaultServiceOptions)
+  where
+    setSocket s options = options {serverHost = fromString ("unix://" <> s <> "\x00"), serverPort = 0}
