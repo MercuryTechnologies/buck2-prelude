@@ -551,7 +551,7 @@ def _dynamic_link_shared_impl(actions, artifacts, dynamic_values, outputs, arg):
         children = [package_db[name] for name in arg.toolchain_libs if name in package_db]
     )
 
-    link_args = cmd_args() #cmd_args(arg.haskell_toolchain.linker)
+    link_args = cmd_args()
     link_cmd_args = [cmd_args(arg.haskell_toolchain.linker)]
     link_cmd_hidden = []
 
@@ -575,7 +575,6 @@ def _dynamic_link_shared_impl(actions, artifacts, dynamic_values, outputs, arg):
 
 
     if arg.use_argsfile_at_link:
-        print("USE ARGSFILES AT LINK")
         argsfile = actions.declare_output(
             "haskell_link_" + arg.artifact_suffix.replace("-", "_") + ".argsfile",
         )
