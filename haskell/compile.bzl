@@ -561,7 +561,7 @@ def _compile_module(
     direct_deps_by_name: dict[str, typing.Any],
     toolchain_deps_by_name: dict[str, None],
     aux_deps: None | list[Artifact],
-    src_envs: None | list,
+    src_envs: None | dict[str, ArgLike],
     source_prefixes: list[str],
 ) -> CompiledModuleTSet:
     # These compiler arguments can be passed in a response file.
@@ -644,7 +644,7 @@ def _compile_module(
         dependency_modules.project_as_args("abi"),
     ]
     if src_envs:
-        for k, v in src_envs:
+        for k, v in src_envs.items():
             compile_args_for_file.add(cmd_args(
                 k,
                 format="--extra-env-key={}",
