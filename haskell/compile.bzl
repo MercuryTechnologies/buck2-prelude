@@ -443,6 +443,7 @@ def _common_compile_module_args(
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
+    command.add("--extra-pkg-db", haskell_toolchain.extra_pkg_db)
 
     if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.use_worker_multiplexer:
         if haskell_toolchain.worker_multiplexer_plugin == None:
