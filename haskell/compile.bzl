@@ -423,6 +423,8 @@ def _common_compile_module_args(
 
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
+    command.add("--ghc-dir", haskell_toolchain.ghc_dir)
+    command.add("--extra-pkg-db", haskell_toolchain.extra_pkg_db)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.

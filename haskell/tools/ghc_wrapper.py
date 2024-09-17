@@ -40,6 +40,12 @@ def main():
         "--ghc", required=True, type=str, help="Path to the Haskell compiler GHC."
     )
     parser.add_argument(
+        "--ghc-dir", type=str, help="Worker option"
+    )
+    parser.add_argument(
+        "--extra-pkg-db", type=str, help="Worker option"
+    )
+    parser.add_argument(
         "--abi-out",
         required=True,
         type=Path,
