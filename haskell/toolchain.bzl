@@ -42,6 +42,7 @@ HaskellToolchainInfo = provider(
         "packages": provider_field(typing.Any, default = None),
         "use_worker": provider_field(bool, default = False),
         "ghc_dir": provider_field(typing.Any, default = None),
+        "extra_pkg_db": provider_field(typing.Any, default = None),
     },
 )
 
