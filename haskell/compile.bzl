@@ -799,6 +799,7 @@ def compile(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
+        worker: WorkerInfo | None = None,
         pkgname: str | None = None) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
@@ -826,7 +827,6 @@ def compile(
         for lib in attr_deps_haskell_link_infos(ctx)
     ]
 
-    worker = ctx.attrs._worker
     dyn_module_tsets = ctx.actions.dynamic_output_new(_dynamic_do_compile(
         dynamic = [md_file],
         dynamic_values = [
@@ -859,7 +859,7 @@ def compile(
             sources_deps = ctx.attrs.srcs_deps,
             srcs_envs = ctx.attrs.srcs_envs,
             toolchain_deps_by_name = toolchain_deps_by_name,
-            worker = None if worker == None else worker[WorkerInfo],
+            worker = worker,
         ),
     ))
 
