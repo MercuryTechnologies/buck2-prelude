@@ -1,0 +1,6 @@
+load(":worker.bzl", "worker_libs")
+
+export_file("Main.hs", visibility = ["PUBLIC"])
+export_file("Worker.hs", visibility = ["PUBLIC"])
+
+[haskell_toolchain_library(name = pkg, visibility = ["PUBLIC"]) for pkg in worker_libs]
