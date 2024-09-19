@@ -14,6 +14,7 @@ load("@prelude//linking:types.bzl", "Linkage")
 load(":common.bzl", "LinkableDepType", "buck", "prelude_rule")
 load(":haskell_common.bzl", "haskell_common")
 load(":native_common.bzl", "native_common")
+load("@prelude//haskell/worker/worker.bzl", "worker_libs")
 
 haskell_binary = prelude_rule(
     name = "haskell_binary",
@@ -65,6 +66,8 @@ haskell_binary = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
+            "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
+            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs])
         }
     ),
 )
@@ -186,6 +189,8 @@ haskell_library = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
+            "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
+            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs])
         }
     ),
 )

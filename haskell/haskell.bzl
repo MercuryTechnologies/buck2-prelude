@@ -9,6 +9,7 @@
 
 load("@prelude//utils:arglike.bzl", "ArgLike")
 load("@prelude//:paths.bzl", "paths")
+load("@prelude//cxx:link_groups_types.bzl", "LINK_GROUP_MAP_ATTR")
 load("@prelude//cxx:archive.bzl", "make_archive")
 load(
     "@prelude//cxx:cxx.bzl",
@@ -148,6 +149,7 @@ load(
 )
 load("@prelude//utils:set.bzl", "set")
 load("@prelude//utils:utils.bzl", "filter_and_map_idx", "flatten")
+load("@prelude//decls:native_common.bzl", "native_common")
 
 HaskellIndexingTSet = transitive_set()
 
@@ -606,6 +608,7 @@ def _build_haskell_lib(
         enable_haddock = enable_haddock,
         md_file = md_file,
         pkgname = pkgname,
+        worker = _persistent_worker(ctx),
     )
     solibs = {}
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -1154,6 +1157,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_profiling = enable_profiling,
         enable_haddock = False,
         md_file = md_file,
+        worker = _persistent_worker(ctx),
     )
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
@@ -1417,3 +1421,50 @@ def _haskell_module_sub_targets(*, compiled, link_style, enable_profiling):
             if o.extension[1:] == osuf
         })],
     }
+
+worker = anon_rule(
+    impl = haskell_binary_impl,
+    attrs = {
+        "_cxx_toolchain": attrs.dep(),
+        "_generate_target_metadata": attrs.dep(providers = [RunInfo]),
+        "_ghc_wrapper": attrs.dep(providers = [RunInfo]),
+        "_haskell_toolchain": attrs.dep(providers = [HaskellToolchainInfo]),
+        "compiler_flags": attrs.list(attrs.string(), default = []),
+        "deps": attrs.list(attrs.dep()),
+        "enable_profiling": attrs.default_only(attrs.bool(default = False)),
+        "external_tools": attrs.list(attrs.dep(), default = []),
+        "link_group_map": LINK_GROUP_MAP_ATTR,
+        "linker_flags": attrs.list(attrs.string(), default = ["-threaded", "-rtsopts", "-with-rtsopts=-N", "-O2",]),
+        "platform_deps": attrs.list(attrs.dep(), default = []),
+        "srcs": attrs.list(attrs.source()),
+        "srcs_deps": attrs.dict(attrs.string(), attrs.dep(), default = {}),
+        "srcs_envs": attrs.dict(attrs.string(), attrs.string(), default = {}),
+        "template_deps": attrs.list(attrs.dep(), default = []),
+        # N.B. the _worker_* attrs are only treated by the call site of the anon_target
+        "_worker_deps": attrs.default_only(attrs.list(attrs.dep(), default = [])),
+        "_worker_srcs": attrs.default_only(attrs.list(attrs.source(), default = [])),
+    } | native_common.link_style(),
+    artifact_promise_mappings = {
+        "worker": lambda x: x[DefaultInfo].default_outputs[0],
+    },
+)
+
+def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
+    if ctx.label.cell == "prelude":
+        return None
+
+    worker_target = ctx.actions.anon_target(
+        worker,
+        {
+            "_cxx_toolchain": ctx.attrs._cxx_toolchain,
+            "_generate_target_metadata": ctx.attrs._generate_target_metadata,
+            "_ghc_wrapper": ctx.attrs._ghc_wrapper,
+            "_haskell_toolchain": ctx.attrs._haskell_toolchain,
+            "deps": ctx.attrs._worker_deps,
+            "link_style": "static",
+            "name": "prelude//haskell:worker",
+            "srcs": ctx.attrs._worker_srcs,
+        },
+    )
+    return WorkerInfo(worker_target.artifact("worker"))
+
