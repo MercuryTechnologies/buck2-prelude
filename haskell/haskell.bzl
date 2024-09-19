@@ -1453,6 +1453,9 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
     if ctx.label.cell == "prelude":
         return None
 
+    if not ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker:
+        return None
+
     worker_target = ctx.actions.anon_target(
         worker,
         {
