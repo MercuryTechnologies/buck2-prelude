@@ -444,14 +444,25 @@ def _common_compile_module_args(
     extra_libraries: list[Dependency],
     sources: list[Artifact],
     direct_deps_info: list[HaskellLibraryInfoTSet],
+    allow_worker: bool,
     pkgname: str | None = None,
 ) -> CommonCompileModuleArgs:
 
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
-    if haskell_toolchain.use_persistent_workers and pkgname:
-        worker_target_id = pkgname
-        command.add("--worker-target-id", worker_target_id)
+    command.add("--ghc-dir", haskell_toolchain.ghc_dir)
+
+    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.use_worker_multiplexer:
+        if haskell_toolchain.worker_multiplexer_plugin == None:
+            fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
+        if pkgname == None:
+            warning("Module {} has no 'pkgname', worker multiplexer will break".format(label))
+        else:
+            package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+            db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
+            command.add("--plugin-db", db.value.db)
+        command.add("--worker-target-id", pkgname)
+
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
     command.add(haskell_toolchain.compiler_flags)
@@ -590,6 +601,7 @@ def _compile_module(
     src_envs: None | dict[str, ArgLike],
     source_prefixes: list[str],
     extra_libraries: list[Dependency],
+    worker: None | WorkerInfo,
 ) -> CompiledModuleTSet:
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
@@ -720,6 +732,7 @@ def _compile_module(
     compile_cmd.add("-fwrite-if-simplified-core")
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
+        compile_cmd.add("-fpackage-db-byte-code")
 
     compile_cmd.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
 
@@ -730,6 +743,8 @@ def _compile_module(
     compile_cmd.add("--buck2-dep", tagged_dep_file)
     compile_cmd.add("--abi-out", outputs[module.hash])
 
+    worker_args = dict() if worker == None else dict(exe = WorkerRunInfo(worker = worker))
+
     actions.run(
         compile_cmd, category = "haskell_compile_" + artifact_suffix.replace("-", "_"), identifier = module_name,
         dep_files = {
@@ -738,6 +753,7 @@ def _compile_module(
         },
         # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
+        **worker_args,
     )
 
     module_tset = actions.tset(
@@ -769,6 +785,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
         enable_profiling = arg.enable_profiling,
         link_style = arg.link_style,
         direct_deps_info = arg.direct_deps_info,
+        allow_worker = arg.allow_worker,
         pkgname = arg.pkgname,
     )
 
@@ -806,6 +823,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
             toolchain_deps_by_name = arg.toolchain_deps_by_name,
             source_prefixes = source_prefixes,
             extra_libraries = arg.extra_libraries,
+            worker = arg.worker,
         )
 
     return [DynamicCompileResultInfo(modules = module_tsets)]
@@ -830,6 +848,7 @@ def compile(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
+        worker: WorkerInfo | None = None,
         pkgname: str | None = None) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
@@ -886,6 +905,8 @@ def compile(
             srcs_envs = ctx.attrs.srcs_envs,
             toolchain_deps_by_name = toolchain_deps_by_name,
             extra_libraries = ctx.attrs.extra_libraries,
+            worker = worker,
+            allow_worker = ctx.attrs.allow_worker,
         ),
     ))
 
