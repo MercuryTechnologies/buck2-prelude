@@ -1,0 +1,3 @@
+load(":worker.bzl", "worker_libs")
+
+[haskell_toolchain_library(name = pkg, visibility = ["PUBLIC"]) for pkg in worker_libs]

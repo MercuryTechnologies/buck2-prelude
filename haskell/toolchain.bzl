@@ -40,6 +40,8 @@ HaskellToolchainInfo = provider(
         "cache_links": provider_field(typing.Any, default = None),
         "script_template_processor": provider_field(typing.Any, default = None),
         "packages": provider_field(typing.Any, default = None),
+        "use_worker": provider_field(bool, default = False),
+        "ghc_dir": provider_field(typing.Any, default = None),
     },
 )
 
