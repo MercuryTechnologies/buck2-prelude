@@ -30,6 +30,7 @@ load("@prelude//go:go_stdlib.bzl", "go_stdlib_impl")
 load("@prelude//go:go_test.bzl", "go_test_impl")
 load("@prelude//go/transitions:defs.bzl", "asan_attr", "cgo_enabled_attr", "coverage_mode_attr", "go_binary_transition", "go_exported_library_transition", "go_test_transition", "race_attr", "tags_attr")
 load("@prelude//haskell:haskell.bzl", "haskell_binary_impl", "haskell_library_impl", "haskell_prebuilt_library_impl", "haskell_toolchain_library_impl")
+load("@prelude//haskell:haskell_genrule.bzl", "haskell_genrule_impl")
 load("@prelude//haskell:haskell_ghci.bzl", "haskell_ghci_impl")
 load("@prelude//haskell:haskell_haddock.bzl", "haskell_haddock_impl")
 load("@prelude//haskell:haskell_ide.bzl", "haskell_ide_impl")
@@ -189,6 +190,7 @@ extra_implemented_rules = struct(
     haskell_ide = haskell_ide_impl,
     haskell_prebuilt_library = haskell_prebuilt_library_impl,
     haskell_toolchain_library = haskell_toolchain_library_impl,
+    haskell_genrule = haskell_genrule_impl,
 
     #lua
     cxx_lua_extension = cxx_lua_extension_impl,
@@ -532,6 +534,10 @@ inlined_extra_attributes = {
         "auto_link_groups": attrs.bool(default = False),
         "link_group_map": LINK_GROUP_MAP_ATTR,
         "template_deps": attrs.list(attrs.exec_dep(providers = [HaskellLibraryProvider]), default = []),
+        "_cxx_toolchain": toolchains_common.cxx(),
+        "_haskell_toolchain": toolchains_common.haskell(),
+    },
+    "haskell_genrule": genrule_attributes() | {
         "_cxx_toolchain": toolchains_common.cxx(),
         "_haskell_toolchain": toolchains_common.haskell(),
     },
