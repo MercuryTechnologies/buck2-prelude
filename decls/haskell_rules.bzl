@@ -13,6 +13,7 @@
 load("@prelude//linking:types.bzl", "Linkage")
 load(":common.bzl", "LinkableDepType", "buck", "prelude_rule")
 load(":haskell_common.bzl", "haskell_common")
+load(":genrule_common.bzl", "genrule_common")
 load(":native_common.bzl", "native_common")
 
 haskell_binary = prelude_rule(
@@ -270,6 +271,49 @@ haskell_prebuilt_library = prelude_rule(
     ),
 )
 
+haskell_genrule = prelude_rule(
+    name = "haskell_genrule",
+    docs = """
+        A `haskell_genrule()` enables you to run shell commands as part
+        of the Buck build process. A `haskell_genrule()` exposes - through
+        a set of string parameter macros and variables - information about the
+        tools and configuration options used by the
+        Buck environment, specifically those related to the Haskell toolchain.
+    """,
+    examples = None,
+    further = None,
+    attrs = (
+        # @unsorted-dict-items
+        genrule_common.srcs_arg() |
+        {
+            "cmd": attrs.option(attrs.arg(), default = None, doc = """
+                Haskell genrule.
+
+            """),
+        } |
+        genrule_common.bash_arg() |
+        genrule_common.cmd_exe_arg() |
+        genrule_common.type_arg() |
+        genrule_common.weight_arg() |
+        genrule_common.out_arg() |
+        genrule_common.environment_expansion_separator() |
+        {
+            #"enable_sandbox": attrs.option(attrs.bool(), default = None, doc = """
+            #    Whether this target should be executed in a sandbox or not.
+            #"""),
+            "cacheable": attrs.option(attrs.bool(), default = None),
+            #"contacts": attrs.list(attrs.string(), default = []),
+            #"default_host_platform": attrs.option(attrs.configuration_label(), default = None),
+            #"default_outs": attrs.option(attrs.set(attrs.string(), sorted = False), default = None),
+            "labels": attrs.list(attrs.string(), default = []),
+            #"licenses": attrs.list(attrs.source(), default = []),
+            #"need_android_tools": attrs.bool(default = False),
+            "outs": attrs.option(attrs.dict(key = attrs.string(), value = attrs.set(attrs.string(), sorted = False), sorted = False), default = None),
+            #"remote": attrs.option(attrs.bool(), default = None),
+        }
+    ),
+)
+
 haskell_rules = struct(
     haskell_binary = haskell_binary,
     haskell_ghci = haskell_ghci,
@@ -278,4 +322,5 @@ haskell_rules = struct(
     haskell_library = haskell_library,
     haskell_prebuilt_library = haskell_prebuilt_library,
     haskell_toolchain_library = haskell_toolchain_library,
+    haskell_genrule = haskell_genrule,
 )
