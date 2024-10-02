@@ -1467,6 +1467,7 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "link_style": "static",
             "name": "prelude//haskell:worker",
             "srcs": ctx.attrs._worker_srcs,
+            "compiler_flags": ctx.attrs._worker_compiler_flags,
         },
     )
     return WorkerInfo(worker_target.artifact("worker"))

@@ -67,7 +67,8 @@ haskell_binary = prelude_rule(
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
             "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
-            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs])
+            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
+            "_worker_compiler_flags": attrs.list(attrs.string(), default = []),
         }
     ),
 )
@@ -190,7 +191,8 @@ haskell_library = prelude_rule(
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
             "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
-            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs])
+            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
+            "_worker_compiler_flags": attrs.list(attrs.string(), default = []),
         }
     ),
 )
