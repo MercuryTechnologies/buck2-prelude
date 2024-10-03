@@ -76,6 +76,13 @@ def _use_argsfile_at_link_arg():
 """),
     }
 
+def _virtual_modules_arg():
+    return {
+        "virtual_modules": attrs.named_set(attrs.string(), sorted = True, default = [], doc = """
+    A list of virtual Haskell modules. See Cabal virtual-modules.
+"""),
+    }
+
 haskell_common = struct(
     srcs_arg = _srcs_arg,
     deps_arg = _deps_arg,
@@ -85,4 +92,5 @@ haskell_common = struct(
     external_tools_arg = _external_tools_arg,
     srcs_envs_arg = _srcs_envs_arg,
     use_argsfile_at_link_arg = _use_argsfile_at_link_arg,
+    virtual_modules_arg = _virtual_modules_arg,
 )
