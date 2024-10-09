@@ -189,6 +189,7 @@ def _dynamic_target_metadata_impl(actions, artifacts, dynamic_values, outputs, a
     )
     package_flag = _package_flag(arg.haskell_toolchain)
     ghc_args = cmd_args()
+    ghc_args.add("-j")
     ghc_args.add("-hide-all-packages")
 
     ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
