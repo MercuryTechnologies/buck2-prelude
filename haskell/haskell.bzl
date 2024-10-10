@@ -556,6 +556,7 @@ def _dynamic_link_shared_impl(actions, artifacts, dynamic_values, outputs, arg):
     link_cmd_hidden = []
 
     link_args.add("--worker-id={}".format(arg.worker_id))
+    link_args.add("--worker-close")
     link_args.add(arg.haskell_toolchain.linker_flags)
     link_args.add(arg.linker_flags)
     link_args.add("-hide-all-packages")
