@@ -586,8 +586,10 @@ def _dynamic_link_shared_impl(actions, artifacts, dynamic_values, outputs, arg):
 
     link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
     link_cmd.add("-o", outputs[arg.lib].as_output())
-    link_cmd.add("--worker-id={}".format(arg.worker_id))
-    link_cmd.add("--worker-close")
+
+    if arg.haskell_toolchain.use_persistent_workers:
+        link_cmd.add("--worker-id={}".format(arg.worker_id))
+        link_cmd.add("--worker-close")
 
     actions.run(
         link_cmd,
