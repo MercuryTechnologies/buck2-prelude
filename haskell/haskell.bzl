@@ -1434,7 +1434,7 @@ worker = anon_rule(
         "enable_profiling": attrs.default_only(attrs.bool(default = False)),
         "external_tools": attrs.list(attrs.dep(), default = []),
         "link_group_map": LINK_GROUP_MAP_ATTR,
-        "linker_flags": attrs.list(attrs.string(), default = ["-threaded", "-rtsopts", "-with-rtsopts=-N", "-O2",]),
+        "linker_flags": attrs.list(attrs.string(), default = []),
         "platform_deps": attrs.list(attrs.dep(), default = []),
         "srcs": attrs.list(attrs.source()),
         "srcs_deps": attrs.dict(attrs.string(), attrs.dep(), default = {}),
@@ -1464,10 +1464,19 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "_ghc_wrapper": ctx.attrs._ghc_wrapper,
             "_haskell_toolchain": ctx.attrs._haskell_toolchain,
             "deps": ctx.attrs._worker_deps,
-            "link_style": "static",
+            "link_style": "shared",
             "name": "prelude//haskell:worker",
             "srcs": ctx.attrs._worker_srcs,
-            "compiler_flags": ctx.attrs._worker_compiler_flags,
+            "compiler_flags": ctx.attrs._worker_compiler_flags + [
+                "-O2",
+            ],
+            "linker_flags": ctx.attrs._worker_compiler_flags + [
+                "-dynamic",
+                "-rtsopts=all",
+                "-with-rtsopts=-K512M -H -I5 -T",
+                "-threaded",
+                "-O2",
+            ],
         },
     )
     return WorkerInfo(worker_target.artifact("worker"))
