@@ -16,6 +16,31 @@ load(":haskell_common.bzl", "haskell_common")
 load(":native_common.bzl", "native_common")
 load("@prelude//haskell/worker/worker.bzl", "worker_libs")
 
+worker_srcs = [
+    "@prelude//haskell/worker/impl/buck-worker:AbiHash.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Args.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Cache.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Compile.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Error.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Log.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Main.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Session.hs",
+    "@prelude//haskell/worker/impl/buck-worker:Worker.hs",
+]
+
+worker_flags = [
+    "-Wall",
+    "-XGHC2021",
+    "-XBlockArguments",
+    "-XDerivingStrategies",
+    "-XRecordWildCards",
+    "-XDuplicateRecordFields",
+    "-XOverloadedRecordDot",
+    "-XStrictData",
+    "-XNoFieldSelectors",
+    "-XLambdaCase",
+]
+
 haskell_binary = prelude_rule(
     name = "haskell_binary",
     docs = """
@@ -66,9 +91,9 @@ haskell_binary = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
-            "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
+            "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
             "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
-            "_worker_compiler_flags": attrs.list(attrs.string(), default = []),
+            "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
         }
     ),
 )
@@ -190,9 +215,9 @@ haskell_library = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
-            "_worker_srcs": attrs.list(attrs.source(), default = ["@prelude//haskell/worker:Main.hs", "@prelude//haskell/worker:Worker.hs"]),
+            "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
             "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
-            "_worker_compiler_flags": attrs.list(attrs.string(), default = []),
+            "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
         }
     ),
 )
