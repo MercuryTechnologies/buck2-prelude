@@ -455,6 +455,7 @@ def _make_package(
             for module in md["module_graph"].keys()
             if not module.endswith("-boot")
         ]
+        virtual_modules = ctx.attrs.virtual_modules
 
         # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
         #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
@@ -469,7 +470,7 @@ def _make_package(
             "id: " + pkgname,
             "key: " + pkgname,
             "exposed: False",
-            "exposed-modules: " + ", ".join(modules),
+            "exposed-modules: " + ", ".join(modules + virtual_modules),
             "import-dirs:" + ", ".join(import_dirs),
             "depends: " + ", ".join([lib.id for lib in hlis]),
         ]
@@ -810,8 +811,12 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     indexing_tsets = {}
     sub_targets = {}
 
-    libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
-    pkgname = libname.replace("_", "-")
+    if(ctx.attrs.use_same_package_name):
+      libname = ctx.label.name
+      pkgname = libname
+    else:
+      libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
+      pkgname = libname.replace("_", "-")
 
     md_file = target_metadata(
         ctx,
