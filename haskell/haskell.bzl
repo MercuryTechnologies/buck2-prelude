@@ -818,8 +818,12 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     indexing_tsets = {}
     sub_targets = {}
 
-    libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
-    pkgname = libname.replace("_", "-")
+    if(ctx.attrs.use_same_package_name):
+      libname = ctx.label.name
+      pkgname = libname
+    else:
+      libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
+      pkgname = libname.replace("_", "-")
 
     md_file = target_metadata(
         ctx,
