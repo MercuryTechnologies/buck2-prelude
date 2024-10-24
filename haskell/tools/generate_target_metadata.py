@@ -203,11 +203,12 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
         haskell_sources = list(filter(is_haskell_src, sources))
-        haskell_boot_sources = list(filter (is_haskell_boot, sources))
+
         if worker_target_id:
             worker_args = ["--worker-target-id={}".format(worker_target_id)]
         else:
             worker_args = []
+
         args = [
             ghc, "-M", "-include-pkg-deps",
             # Note: `-outputdir '.'` removes the prefix of all targets:
@@ -215,7 +216,7 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
             "-outputdir", ".",
             "-dep-json", json_fname,
             "-dep-makefile", make_fname,
-        ] + worker_args + ghc_args + haskell_sources + haskell_boot_sources
+        ] + worker_args + ghc_args + haskell_sources
 
         env = os.environ.copy()
         path = env.get("PATH", "")
