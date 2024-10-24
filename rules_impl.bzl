@@ -34,6 +34,7 @@ load("@prelude//haskell:haskell_ghci.bzl", "haskell_ghci_impl")
 load("@prelude//haskell:haskell_haddock.bzl", "haskell_haddock_impl")
 load("@prelude//haskell:haskell_ide.bzl", "haskell_ide_impl")
 load("@prelude//haskell:library_info.bzl", "HaskellLibraryProvider")
+load("@prelude//haskell:toolchain.bzl", "HaskellToolchainInfo")
 load("@prelude//http_archive:http_archive.bzl", "http_archive_impl")
 load("@prelude//java:java.bzl", _java_extra_attributes = "extra_attributes", _java_implemented_rules = "implemented_rules")
 load("@prelude//js:js.bzl", _js_extra_attributes = "extra_attributes", _js_implemented_rules = "implemented_rules")
@@ -189,6 +190,7 @@ extra_implemented_rules = struct(
     haskell_ide = haskell_ide_impl,
     haskell_prebuilt_library = haskell_prebuilt_library_impl,
     haskell_toolchain_library = haskell_toolchain_library_impl,
+    haskell_genrule = genrule_impl,
 
     #lua
     cxx_lua_extension = cxx_lua_extension_impl,
@@ -532,6 +534,10 @@ inlined_extra_attributes = {
         "auto_link_groups": attrs.bool(default = False),
         "link_group_map": LINK_GROUP_MAP_ATTR,
         "template_deps": attrs.list(attrs.exec_dep(providers = [HaskellLibraryProvider]), default = []),
+        "_cxx_toolchain": toolchains_common.cxx(),
+        "_haskell_toolchain": toolchains_common.haskell(),
+    },
+    "haskell_genrule": genrule_attributes() | {
         "_cxx_toolchain": toolchains_common.cxx(),
         "_haskell_toolchain": toolchains_common.haskell(),
     },
