@@ -17,14 +17,15 @@ load(":native_common.bzl", "native_common")
 load("@prelude//haskell/worker/worker.bzl", "worker_libs")
 
 worker_srcs = [
-    "@prelude//haskell/worker/impl/buck-worker:AbiHash.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
     "@prelude//haskell/worker/impl/buck-worker:Args.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Cache.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Compile.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Error.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Log.hs",
     "@prelude//haskell/worker/impl/buck-worker:Main.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Session.hs",
     "@prelude//haskell/worker/impl/buck-worker:Worker.hs",
 ]
 
