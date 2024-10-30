@@ -14,33 +14,7 @@ load("@prelude//linking:types.bzl", "Linkage")
 load(":common.bzl", "LinkableDepType", "buck", "prelude_rule")
 load(":haskell_common.bzl", "haskell_common")
 load(":native_common.bzl", "native_common")
-load("@prelude//haskell/worker/worker.bzl", "worker_libs")
-
-worker_srcs = [
-    "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Args.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Main.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Worker.hs",
-]
-
-worker_flags = [
-    "-Wall",
-    "-XGHC2021",
-    "-XBlockArguments",
-    "-XDerivingStrategies",
-    "-XRecordWildCards",
-    "-XDuplicateRecordFields",
-    "-XOverloadedRecordDot",
-    "-XStrictData",
-    "-XNoFieldSelectors",
-    "-XLambdaCase",
-]
+load("@prelude//haskell/worker/worker.bzl", "worker_libs", "worker_srcs", "worker_flags")
 
 haskell_binary = prelude_rule(
     name = "haskell_binary",
