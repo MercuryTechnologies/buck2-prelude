@@ -1,30 +1,58 @@
+if True:
+
+    worker_srcs = [
+        "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
+        "@prelude//haskell/worker/impl/server/app:Server.hs",
+        "@prelude//haskell/worker/impl/server/app:Pool.hs",
+        "@prelude//haskell/worker/impl/server/app:Worker.hs",
+        "@prelude//haskell/worker/impl/comm/src:Message.hs",
+        "@prelude//haskell/worker/impl/buck-worker:Args.hs",
+        "@prelude//haskell/worker/impl/buck-worker-2:Main.hs",
+        "@prelude//haskell/worker/impl/buck-worker:BuckWorker.hs",
+    ]
+
+else:
+
+    worker_srcs = [
+        "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
+        "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
+        "@prelude//haskell/worker/impl/buck-worker:Args.hs",
+        "@prelude//haskell/worker/impl/buck-worker:Main.hs",
+        "@prelude//haskell/worker/impl/buck-worker:Worker.hs",
+    ]
+
 worker_libs = [
     "base",
+    "binary",
     "bytestring",
     "containers",
     "deepseq",
     "exceptions",
+    "extra",
     "filepath",
     "ghc",
+    "ghc-persistent-worker-plugin",
     "grpc-haskell",
+    "network",
+    "process",
     "proto3-suite",
     "proto3-wire",
+    "stm",
     "text",
+    "transformers",
     "vector",
     "unix",
-]
-
-worker_srcs = [
-    "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
-    "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Args.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Main.hs",
-    "@prelude//haskell/worker/impl/buck-worker:Worker.hs",
 ]
 
 worker_flags = [
@@ -36,6 +64,6 @@ worker_flags = [
     "-XDuplicateRecordFields",
     "-XOverloadedRecordDot",
     "-XStrictData",
-    "-XNoFieldSelectors",
+    # "-XNoFieldSelectors",
     "-XLambdaCase",
 ]

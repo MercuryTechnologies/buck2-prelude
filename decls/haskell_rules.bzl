@@ -69,6 +69,7 @@ haskell_binary = prelude_rule(
             "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
             "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
             "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
+            "_worker_plugin": attrs.dep(default = "@prelude//haskell/worker:ghc-persistent-worker-plugin"),
         }
     ),
 )
@@ -193,6 +194,7 @@ haskell_library = prelude_rule(
             "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
             "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
             "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
+            "_worker_plugin": attrs.dep(default = "@prelude//haskell/worker:ghc-persistent-worker-plugin"),
         }
     ),
 )

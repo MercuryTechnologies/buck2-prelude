@@ -609,6 +609,7 @@ def _build_haskell_lib(
         md_file = md_file,
         pkgname = pkgname,
         worker = _persistent_worker(ctx),
+        worker_plugin = ctx.attrs._worker_plugin if ctx.label.cell != "prelude" and ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker else None,
     )
     solibs = {}
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -1151,6 +1152,10 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     md_file = target_metadata(ctx, sources = ctx.attrs.srcs)
 
+    # Provisional hack to have a worker ID
+    libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
+    pkgname = libname.replace("_", "-")
+
     compiled = compile(
         ctx,
         link_style,
@@ -1158,6 +1163,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_haddock = False,
         md_file = md_file,
         worker = _persistent_worker(ctx),
+        pkgname = pkgname,
+        worker_plugin = ctx.attrs._worker_plugin if hasattr(ctx.attrs, "_worker_plugin") else None,
     )
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
