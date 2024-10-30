@@ -1,3 +1,5 @@
 load(":worker.bzl", "worker_libs")
 
 [haskell_toolchain_library(name = pkg, visibility = ["PUBLIC"]) for pkg in worker_libs]
+
+haskell_toolchain_library(name = "ghc-persistent-worker-plugin", visibility = ["PUBLIC"])

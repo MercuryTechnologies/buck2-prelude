@@ -1211,6 +1211,10 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     md_file = target_metadata(ctx, sources = ctx.attrs.srcs)
 
+    # Provisional hack to have a worker ID
+    libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
+    pkgname = libname.replace("_", "-")
+
     compiled = compile(
         ctx,
         link_style,
@@ -1218,6 +1222,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_haddock = False,
         md_file = md_file,
         worker = _persistent_worker(ctx),
+        pkgname = pkgname,
     )
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
@@ -1498,9 +1503,8 @@ worker = anon_rule(
         "srcs_deps": attrs.dict(attrs.string(), attrs.dep(), default = {}),
         "srcs_envs": attrs.dict(attrs.string(), attrs.string(), default = {}),
         "template_deps": attrs.list(attrs.dep(), default = []),
-        # N.B. the _worker_* attrs are only treated by the call site of the anon_target
-        "_worker_deps": attrs.default_only(attrs.list(attrs.dep(), default = [])),
-        "_worker_srcs": attrs.default_only(attrs.list(attrs.source(), default = [])),
+        # N.B. allow_worker is only treated by the call site of the anon_target
+        "allow_worker": attrs.bool(),
     }
     | haskell_common.use_argsfile_at_link_arg()
     | native_common.link_style(),
@@ -1510,10 +1514,11 @@ worker = anon_rule(
 )
 
 def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
-    if ctx.label.cell == "prelude":
+    if not ctx.attrs.allow_worker:
         return None
 
-    if not ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker:
+    tc = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    if not tc.use_worker:
         return None
 
     worker_target = ctx.actions.anon_target(
@@ -1523,14 +1528,14 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "_generate_target_metadata": ctx.attrs._generate_target_metadata,
             "_ghc_wrapper": ctx.attrs._ghc_wrapper,
             "_haskell_toolchain": ctx.attrs._haskell_toolchain,
-            "deps": ctx.attrs._worker_deps,
+            "deps": tc.worker_deps,
             "link_style": "shared",
             "name": "prelude//haskell:worker",
-            "srcs": ctx.attrs._worker_srcs,
-            "compiler_flags": ctx.attrs._worker_compiler_flags + [
+            "srcs": tc.worker_srcs_multiplexer if tc.use_worker_multiplexer else tc.worker_srcs,
+            "compiler_flags": tc.worker_compiler_flags + [
                 "-O2",
             ],
-            "linker_flags": ctx.attrs._worker_compiler_flags + [
+            "linker_flags": [
                 "-dynamic",
                 "-rtsopts=all",
                 "-with-rtsopts=-K512M -H -I5 -T",
@@ -1538,6 +1543,7 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
                 "-O2",
             ],
             "use_argsfile_at_link": False,
+            "allow_worker": False,
         },
     )
     return WorkerInfo(worker_target.artifact("worker"))

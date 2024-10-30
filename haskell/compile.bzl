@@ -437,11 +437,23 @@ def _common_compile_module_args(
     external_tool_paths: list[RunInfo],
     sources: list[Artifact],
     direct_deps_info: list[HaskellLibraryInfoTSet],
+    allow_worker: bool,
     pkgname: str | None = None,
 ) -> CommonCompileModuleArgs:
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
+
+    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.use_worker_multiplexer:
+        if haskell_toolchain.worker_multiplexer_plugin == None:
+            fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
+        if pkgname == None:
+            warning("Module {} has no 'pkgname', worker multiplexer will break".format(label))
+        else:
+            package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+            db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
+            command.add("--plugin-db", db.value.db)
+        command.add("--worker-target-id", pkgname)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
@@ -753,6 +765,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
         enable_profiling = arg.enable_profiling,
         link_style = arg.link_style,
         direct_deps_info = arg.direct_deps_info,
+        allow_worker = arg.allow_worker,
         pkgname = arg.pkgname,
     )
 
@@ -871,6 +884,7 @@ def compile(
             srcs_envs = ctx.attrs.srcs_envs,
             toolchain_deps_by_name = toolchain_deps_by_name,
             worker = worker,
+            allow_worker = ctx.attrs.allow_worker,
         ),
     ))
 
