@@ -428,10 +428,21 @@ def _common_compile_module_args(
     sources: list[Artifact],
     direct_deps_info: list[HaskellLibraryInfoTSet],
     pkgname: str | None = None,
+    worker_plugin: Dependency | None = None,
 ) -> CommonCompileModuleArgs:
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
+
+    if haskell_toolchain.use_worker and worker_plugin != None:
+        if pkgname == None:
+            warning("Module {} has no 'pkgname', plugin worker will break".format(label))
+        else:
+            pkg_deps = resolved[haskell_toolchain.packages.dynamic]
+            package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+            db = package_db[worker_plugin[HaskellToolchainLibrary].name]
+            command.add("--plugin-db", db.value.db)
+        command.add("--worker-target-id", pkgname)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
@@ -750,6 +761,7 @@ def _dynamic_do_compile_impl(actions, artifacts, dynamic_values, outputs, arg):
         link_style = arg.link_style,
         direct_deps_info = arg.direct_deps_info,
         pkgname = arg.pkgname,
+        worker_plugin = arg.worker_plugin,
     )
 
     md = artifacts[arg.md_file].read_json()
@@ -801,6 +813,7 @@ def compile(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
+        worker_plugin: Dependency | None,
         worker: WorkerInfo | None = None,
         pkgname: str | None = None) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -862,6 +875,7 @@ def compile(
             srcs_envs = ctx.attrs.srcs_envs,
             toolchain_deps_by_name = toolchain_deps_by_name,
             worker = worker,
+            worker_plugin = worker_plugin,
         ),
     ))
 
