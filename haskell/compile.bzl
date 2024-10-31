@@ -865,8 +865,8 @@ def compile(
     stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir=True)
 
     # collect the stubs from all modules into the stubs_dir
-    ctx.actions.run(
-        cmd_args([
+    if ctx.attrs.use_argsfile_at_link:
+        stub_copy_cmd = cmd_args([
             "bash", "-exuc",
             """\
             mkdir -p \"$0\"
@@ -874,9 +874,29 @@ def compile(
               find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
             done
             """,
-            stubs_dir.as_output(),
-            stub_dirs
-        ]),
+        ])
+        stub_copy_cmd.add(stubs_dir.as_output())
+        stub_copy_cmd.add(at_argfile(
+            actions = ctx.actions,
+            name = "haskell_stubs_" + artifact_suffix + ".argsfile",
+            args = stub_dirs,
+            allow_args = True,
+        ))
+    else:
+        stub_copy_cmd = cmd_args([
+            "bash", "-exuc",
+            """\
+            mkdir -p \"$0\"
+            for stub; do
+              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
+            done
+            """,
+        ])
+        stub_copy_cmd.add(stubs_dir.as_output())
+        stub_copy_cmd.add(stub_dirs)
+
+    ctx.actions.run(
+        stub_copy_cmd,
         category = "haskell_stubs",
         identifier = artifact_suffix,
         local_only = True,
