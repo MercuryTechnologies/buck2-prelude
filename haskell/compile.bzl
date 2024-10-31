@@ -50,7 +50,7 @@ load(
     "@prelude//linking:link_info.bzl",
     "LinkStyle",
 )
-load("@prelude//utils:argfile.bzl", "at_argfile")
+load("@prelude//utils:argfile.bzl", "argfile", "at_argfile")
 load("@prelude//:paths.bzl", "paths")
 load("@prelude//utils:graph_utils.bzl", "post_order_traversal")
 load("@prelude//utils:strings.bzl", "strip_prefix")
@@ -870,13 +870,13 @@ def compile(
             "bash", "-exuc",
             """\
             mkdir -p \"$0\"
-            for stub; do
+            cat $1 | while read stub; do
               find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
             done
             """,
         ])
         stub_copy_cmd.add(stubs_dir.as_output())
-        stub_copy_cmd.add(at_argfile(
+        stub_copy_cmd.add(argfile(
             actions = ctx.actions,
             name = "haskell_stubs_" + artifact_suffix + ".argsfile",
             args = stub_dirs,
