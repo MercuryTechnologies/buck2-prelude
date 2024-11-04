@@ -558,7 +558,10 @@ def _get_haskell_shared_library_name_linker_flags(
         fail("Unknown linker type '{}'.".format(linker_type))
 
 def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
-    package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+    if pkg_deps:
+        package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+    else:
+        package_db = {}
 
     package_db_tset = actions.tset(
         HaskellPackageDbTSet,
@@ -616,7 +619,7 @@ _dynamic_link_shared = dynamic_actions(
     attrs = {
         "arg": dynattrs.value(typing.Any),
         "lib": dynattrs.output(),
-        "pkg_deps": dynattrs.dynamic_value(),
+        "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
     },
 )
 
@@ -682,7 +685,7 @@ def _build_haskell_lib(
         )
 
         ctx.actions.dynamic_output_new(_dynamic_link_shared(
-            pkg_deps = haskell_toolchain.packages.dynamic,
+            pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
             lib = lib.as_output(),
             arg = struct(
                 artifact_suffix = artifact_suffix,
