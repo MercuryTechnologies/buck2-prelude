@@ -714,7 +714,7 @@ def _compile_module(
             "abi": abi_tag,
             "packagedb": packagedb_tag,
         },
-        local_only = True,
+        # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
     )
 
