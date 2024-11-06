@@ -212,7 +212,12 @@ def _dynamic_target_metadata_impl(actions, artifacts, dynamic_values, outputs, a
     )
     md_args.add("--output", outputs[arg.md_file].as_output())
 
-    actions.run(md_args, category = "haskell_metadata", identifier = arg.suffix if arg.suffix else None)
+    actions.run(
+        md_args,
+        category = "haskell_metadata",
+        identifier = arg.suffix if arg.suffix else None,
+        weight = 8,
+    )
 
     return []
 
