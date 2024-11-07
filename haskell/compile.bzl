@@ -893,7 +893,7 @@ def compile(
     # collect the stubs from all modules into the stubs_dir
     if ctx.attrs.use_argsfile_at_link:
         stub_copy_cmd = cmd_args([
-            "bash", "-exuc",
+            "bash", "-euc",
             """\
             mkdir -p \"$0\"
             cat $1 | while read stub; do
@@ -910,7 +910,7 @@ def compile(
         ))
     else:
         stub_copy_cmd = cmd_args([
-            "bash", "-exuc",
+            "bash", "-euc",
             """\
             mkdir -p \"$0\"
             for stub; do
