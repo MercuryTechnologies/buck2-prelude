@@ -1,3 +1,21 @@
-load(":worker.bzl", "worker_libs")
+load(":worker.bzl", "worker_libs", "worker_config")
 
 [haskell_toolchain_library(name = pkg, visibility = ["PUBLIC"]) for pkg in worker_libs]
+
+worker_config(
+  name = "config",
+  deps = [":" + pkg for pkg in worker_libs],
+  compiler_flags = [
+    "-Wall",
+    "-XGHC2021",
+    "-XBlockArguments",
+    "-XDerivingStrategies",
+    "-XRecordWildCards",
+    "-XDuplicateRecordFields",
+    "-XOverloadedRecordDot",
+    "-XStrictData",
+    # "-XNoFieldSelectors",
+    "-XLambdaCase",
+  ],
+  visibility = ["PUBLIC"],
+)

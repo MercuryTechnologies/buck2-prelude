@@ -14,7 +14,7 @@ load("@prelude//linking:types.bzl", "Linkage")
 load(":common.bzl", "LinkableDepType", "buck", "prelude_rule")
 load(":haskell_common.bzl", "haskell_common")
 load(":native_common.bzl", "native_common")
-load("@prelude//haskell/worker/worker.bzl", "worker_libs", "worker_srcs", "worker_flags")
+load("@prelude//haskell/worker/worker.bzl", "HaskellWorkerInfo")
 
 haskell_binary = prelude_rule(
     name = "haskell_binary",
@@ -67,10 +67,7 @@ haskell_binary = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
-            "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
-            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
-            "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
-            "_worker_plugin": attrs.dep(default = "@prelude//haskell/worker:ghc-persistent-worker-plugin"),
+            "_worker": attrs.dep(providers = [HaskellWorkerInfo], default = "@prelude//haskell/worker:config"),
         }
     ),
 )
@@ -193,10 +190,7 @@ haskell_library = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
-            "_worker_srcs": attrs.list(attrs.source(), default = worker_srcs),
-            "_worker_deps": attrs.list(attrs.dep(), default = ["@prelude//haskell/worker:{}".format(pkg) for pkg in worker_libs]),
-            "_worker_compiler_flags": attrs.list(attrs.string(), default = worker_flags),
-            "_worker_plugin": attrs.dep(default = "@prelude//haskell/worker:ghc-persistent-worker-plugin"),
+            "_worker": attrs.dep(providers = [HaskellWorkerInfo], default = "@prelude//haskell/worker:config"),
         }
     ),
 )

@@ -153,6 +153,7 @@ load("@prelude//utils:argfile.bzl", "at_argfile")
 load("@prelude//utils:set.bzl", "set")
 load("@prelude//utils:utils.bzl", "filter_and_map_idx", "flatten")
 load("@prelude//decls:native_common.bzl", "native_common")
+load("@prelude//haskell/worker:worker.bzl", "HaskellWorkerInfo")
 
 HaskellIndexingTSet = transitive_set()
 
@@ -622,6 +623,8 @@ def _build_haskell_lib(
     # Link the objects into a library
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
+    worker_info = ctx.attrs._worker[HaskellWorkerInfo] if hasattr(ctx.attrs, "_worker") else None
+
     # Compile the sources
     compiled = compile(
         ctx,
@@ -631,7 +634,7 @@ def _build_haskell_lib(
         md_file = md_file,
         pkgname = pkgname,
         worker = _persistent_worker(ctx),
-        worker_plugin = ctx.attrs._worker_plugin if ctx.label.cell != "prelude" and ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker else None,
+        hs_worker_info = worker_info,
     )
     solibs = {}
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -1187,6 +1190,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
     pkgname = libname.replace("_", "-")
 
+    worker_info = ctx.attrs._worker[HaskellWorkerInfo] if hasattr(ctx.attrs, "_worker") else None
+
     compiled = compile(
         ctx,
         link_style,
@@ -1194,8 +1199,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_haddock = False,
         md_file = md_file,
         worker = _persistent_worker(ctx),
+        hs_worker_info = worker_info,
         pkgname = pkgname,
-        worker_plugin = ctx.attrs._worker_plugin if hasattr(ctx.attrs, "_worker_plugin") else None,
     )
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
@@ -1491,8 +1496,12 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
     if ctx.label.cell == "prelude":
         return None
 
-    if not ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker:
+    # just do not set a worker if you don't want it (?)
+    #if not ctx.attrs._haskell_toolchain[HaskellToolchainInfo].use_worker:
+    if not hasattr(ctx.attrs, "_worker"):
         return None
+
+    worker_info = ctx.attrs._worker[HaskellWorkerInfo]
 
     worker_target = ctx.actions.anon_target(
         worker,
@@ -1501,14 +1510,14 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "_generate_target_metadata": ctx.attrs._generate_target_metadata,
             "_ghc_wrapper": ctx.attrs._ghc_wrapper,
             "_haskell_toolchain": ctx.attrs._haskell_toolchain,
-            "deps": ctx.attrs._worker_deps,
+            "deps": worker_info.deps,
             "link_style": "shared",
             "name": "prelude//haskell:worker",
-            "srcs": ctx.attrs._worker_srcs,
-            "compiler_flags": ctx.attrs._worker_compiler_flags + [
+            "srcs": worker_info.srcs,
+            "compiler_flags": worker_info.compiler_flags + [
                 "-O2",
             ],
-            "linker_flags": ctx.attrs._worker_compiler_flags + [
+            "linker_flags": worker_info.compiler_flags + [
                 "-dynamic",
                 "-rtsopts=all",
                 "-with-rtsopts=-K512M -H -I5 -T",
@@ -1517,5 +1526,5 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             ],
         },
     )
-    return WorkerInfo(worker_target.artifact("worker"))
+    return WorkerInfo(cmd_args([worker_target.artifact("worker"), "-plugin", worker_info.plugin_db]))
 
