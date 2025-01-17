@@ -603,7 +603,7 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
     link_cmd.add("-o", lib)
 
-    if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer:
+    if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer and False:
         link_cmd.add("--worker-target-id={}".format(arg.worker_target_id))
         link_cmd.add("--worker-close")
 
