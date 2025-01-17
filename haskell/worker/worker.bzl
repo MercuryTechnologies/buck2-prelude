@@ -6,6 +6,7 @@ worker_libs = [
     "deepseq",
     "directory",
     "exceptions",
+    "extra",
     "filepath",
     "ghc",
     "grpc-haskell",

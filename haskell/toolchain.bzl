@@ -43,6 +43,7 @@ HaskellToolchainInfo = provider(
         "use_persistent_workers": provider_field(typing.Any, default = None),
         "use_worker": provider_field(bool, default = False),
         "use_worker_multiplexer": provider_field(bool, default = False),
+        "worker_multiplexer_custom": provider_field(bool, default = False),
         "worker_multiplexer_plugin": provider_field(None | Dependency, default = None),
         "worker_srcs": provider_field(typing.Any, default = []),
         "worker_srcs_multiplexer": provider_field(typing.Any, default = []),
