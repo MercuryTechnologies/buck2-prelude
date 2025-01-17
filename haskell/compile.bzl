@@ -201,7 +201,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args = cmd_args(arg.md_gen)
     md_args.add(packages_info.bin_paths)
     md_args.add("--ghc", arg.haskell_toolchain.compiler)
-    if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer:
+    if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer and False:
         md_args.add("--worker-target-id", "haskell_metadata")
     md_args.add(cmd_args(ghc_args, format="--ghc-arg={}"))
     md_args.add(
@@ -458,6 +458,8 @@ def _common_compile_module_args(
                 package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
                 db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
                 command.add("--plugin-db", db.value.db)
+            if haskell_toolchain.worker_multiplexer_custom:
+                command.add("--worker-multiplexer-custom")
         if pkgname != None:
             command.add("--worker-target-id", pkgname)
 
