@@ -205,7 +205,9 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args.add(packages_info.bin_paths)
     md_args.add("--ghc", arg.haskell_toolchain.compiler)
     if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer and False:
+        # add_multiplexer_args(md_args)
         md_args.add("--worker-target-id", "haskell_metadata")
+        # md_args.add("--worker-mode", "metadata")
     md_args.add(cmd_args(ghc_args, format="--ghc-arg={}"))
     md_args.add(
         "--source-prefix",
@@ -448,6 +450,7 @@ def _common_compile_module_args(
     sources: list[Artifact],
     direct_deps_info: list[HaskellLibraryInfoTSet],
     allow_worker: bool,
+    worker_plugin: Artifact | None,
     pkgname: str | None = None,
 ) -> CommonCompileModuleArgs:
 
@@ -457,14 +460,16 @@ def _common_compile_module_args(
 
     if allow_worker and haskell_toolchain.use_worker:
         if haskell_toolchain.use_worker_multiplexer:
-            if haskell_toolchain.worker_multiplexer_plugin == None:
+            if worker_plugin == None:
                 fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
             if pkgname == None:
                 warning("Module {} has no 'pkgname', worker multiplexer will break".format(label))
             else:
-                package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
-                db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
-                command.add("--plugin-db", db.value.db)
+                # package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+                # db = package_db[worker_plugin.name]
+                # command.add("--plugin-db", db.value.db)
+                print(worker_plugin)
+                command.add("--plugin-db", worker_plugin)
         if pkgname != None:
             command.add("--worker-target-id", pkgname)
 
@@ -791,6 +796,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
         link_style = arg.link_style,
         direct_deps_info = arg.direct_deps_info,
         allow_worker = arg.allow_worker,
+        worker_plugin = arg.worker_plugin,
         pkgname = arg.pkgname,
     )
 
@@ -854,6 +860,7 @@ def compile(
         enable_haddock: bool,
         md_file: Artifact,
         worker: WorkerInfo | None = None,
+        worker_plugin: Artifact | None = None,
         pkgname: str | None = None) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
@@ -911,6 +918,7 @@ def compile(
             toolchain_deps_by_name = toolchain_deps_by_name,
             extra_libraries = ctx.attrs.extra_libraries,
             worker = worker,
+            worker_plugin = worker_plugin,
             allow_worker = ctx.attrs.allow_worker,
         ),
     ))

@@ -9,6 +9,7 @@ worker_libs = [
     "extra",
     "filepath",
     "ghc",
+    "ghc-boot",
     "grpc-haskell",
     "network",
     "process",
@@ -16,6 +17,7 @@ worker_libs = [
     "proto3-wire",
     "stm",
     "text",
+    "time",
     "transformers",
     "vector",
     "unix",
@@ -43,6 +45,18 @@ worker_srcs_multiplexer = worker_srcs_shared + [
     "@prelude//haskell/worker/impl/server/lib:Pool.hs",
     "@prelude//haskell/worker/impl/server/lib:Worker.hs",
     "@prelude//haskell/worker/impl/buck-multiplex-worker:Main.hs",
+]
+
+worker_srcs_multiplexer_plugin = [
+    "@prelude//haskell/worker/impl/plugin/src:GHCPersistentWorkerPlugin.hs",
+    "@prelude//haskell/worker/impl/plugin/src-ghc98:GHC/Main.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/AbiHash.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
 ]
 
 worker_flags = [

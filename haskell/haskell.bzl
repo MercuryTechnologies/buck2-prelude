@@ -652,6 +652,7 @@ def _build_haskell_lib(
         md_file = md_file,
         pkgname = pkgname,
         worker = _persistent_worker(ctx),
+        worker_plugin = _worker_plugin(ctx),
     )
     solibs = {}
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -1555,3 +1556,86 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
     )
     return WorkerInfo(worker_target.artifact("worker"))
 
+
+worker_plugin = anon_rule(
+    impl = haskell_library_impl,
+    attrs = {
+        "_cxx_toolchain": attrs.dep(),
+        "_generate_target_metadata": attrs.dep(providers = [RunInfo]),
+        "_ghc_wrapper": attrs.dep(providers = [RunInfo]),
+        "_haskell_toolchain": attrs.dep(providers = [HaskellToolchainInfo]),
+        "compiler_flags": attrs.list(attrs.string(), default = []),
+        "deps": attrs.list(attrs.dep()),
+        "enable_profiling": attrs.default_only(attrs.bool(default = False)),
+        "external_tools": attrs.list(attrs.dep(), default = []),
+        # "link_group_map": LINK_GROUP_MAP_ATTR,
+        "linker_flags": attrs.list(attrs.string(), default = []),
+        "platform_deps": attrs.list(attrs.dep(), default = []),
+        "srcs": attrs.list(attrs.source()),
+        "srcs_deps": attrs.dict(attrs.string(), attrs.dep(), default = {}),
+        "srcs_envs": attrs.dict(attrs.string(), attrs.string(), default = {}),
+        "template_deps": attrs.list(attrs.dep(), default = []),
+        "allow_worker": attrs.bool(),
+            # "contacts": attrs.list(attrs.string(), default = []),
+            # "default_host_platform": attrs.option(attrs.configuration_label(), default = None),
+            # "enable_profiling": attrs.bool(default = False),
+            # "ghci_platform_preload_deps": attrs.list(attrs.tuple(attrs.regex(), attrs.set(attrs.dep(), sorted = True)), default = []),
+            # "ghci_preload_deps": attrs.set(attrs.dep(), sorted = True, default = []),
+            "haddock_flags": attrs.list(attrs.arg(), default = []),
+            "labels": attrs.list(attrs.string(), default = []),
+            # "licenses": attrs.list(attrs.source(), default = []),
+            # "platform": attrs.option(attrs.string(), default = None),
+            # "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
+    }
+    | native_common.link_whole(link_whole_type = attrs.bool(default = False))
+    | native_common.preferred_linkage(preferred_linkage_type = attrs.enum(Linkage.values()))
+    | haskell_common.use_argsfile_at_link_arg()
+    | haskell_common.extra_libraries_arg()
+    | haskell_common.module_prefix_arg()
+    | native_common.link_style(),
+    artifact_promise_mappings = {
+        "plugin": lambda x: x[HaskellLibraryProvider].lib[LinkStyle("shared")].db,
+    },
+)
+
+def _worker_plugin(ctx: AnalysisContext) -> Artifact | None:
+    if not ctx.attrs.allow_worker:
+        return None
+
+    tc = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    if not tc.use_worker:
+        return None
+
+    target = ctx.actions.anon_target(
+        worker_plugin,
+        {
+            "preferred_linkage": ctx.attrs.preferred_linkage,
+            "enable_profiling": ctx.attrs.enable_profiling,
+            "_cxx_toolchain": ctx.attrs._cxx_toolchain,
+            "_generate_target_metadata": ctx.attrs._generate_target_metadata,
+            "_ghc_wrapper": ctx.attrs._ghc_wrapper,
+            "_haskell_toolchain": ctx.attrs._haskell_toolchain,
+            "deps": tc.worker_deps,
+            "link_style": "shared",
+            "name": "prelude//haskell:worker-plugin",
+            "srcs": tc.worker_srcs_multiplexer_plugin,
+            "compiler_flags": [
+                "-XBlockArguments",
+                "-XDerivingStrategies",
+                "-XDuplicateRecordFields",
+                "-XLambdaCase",
+                "-XNoFieldSelectors",
+                "-XOverloadedRecordDot",
+                "-XRecordWildCards",
+                "-XStrictData",
+                "-O2",
+            ],
+            "linker_flags": [
+                "-dynamic",
+                "-O2",
+            ],
+            # "use_argsfile_at_link": False,
+            "allow_worker": False,
+        },
+    )
+    return target.artifact("plugin")
