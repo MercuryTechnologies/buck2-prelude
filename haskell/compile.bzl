@@ -465,6 +465,8 @@ def _common_compile_module_args(
                 package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
                 db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
                 command.add("--plugin-db", db.value.db)
+            if haskell_toolchain.worker_multiplexer_custom:
+                command.add("--worker-multiplexer-custom")
         if pkgname != None:
             command.add("--worker-target-id", pkgname)
 
