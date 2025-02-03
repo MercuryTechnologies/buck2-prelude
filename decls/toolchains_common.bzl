@@ -47,7 +47,7 @@ def _go_toolchain():
     return _toolchain("go", [GoToolchainInfo])
 
 def _haskell_toolchain():
-    return _toolchain("haskell", [HaskellToolchainInfo, HaskellPlatformInfo])
+    return _toolchain("haskell-worker", [HaskellToolchainInfo, HaskellPlatformInfo])
 
 def _java_toolchain():
     return _toolchain("java", [JavaToolchainInfo, JavaPlatformInfo])

@@ -1553,5 +1553,5 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "allow_worker": False,
         },
     )
-    return WorkerInfo(worker_target.artifact("worker"))
+    return WorkerInfo(worker_target.artifact("worker"), concurrency = 4)
 
