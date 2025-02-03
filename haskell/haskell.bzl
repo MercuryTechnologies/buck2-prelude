@@ -1545,6 +1545,7 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "compiler_flags": tc.worker_compiler_flags + [
                 "-O2",
                 "-DBUCK",
+                "-DMWB",
             ],
             "linker_flags": [
                 "-dynamic",

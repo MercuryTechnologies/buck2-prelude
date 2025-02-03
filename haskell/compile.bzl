@@ -238,6 +238,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         bp_args.add("-j")
         bp_args.add("-hide-all-packages")
         bp_args.add("-include-pkg-deps")
+        bp_args.add(packages_info.bin_paths)
         bp_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
         bp_args.add(cmd_args(packages_info.exposed_package_args))
         bp_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
@@ -782,8 +783,8 @@ def _compile_module(
         compile_cmd.add(l.lib_path)
         compile_cmd.add("-l{}".format(l.name))
 
-    compile_cmd.add("-fwrite-if-simplified-core")
-    compile_cmd.add("-fpackage-db-byte-code")
+    # compile_cmd.add("-fwrite-if-simplified-core")
+    compile_cmd.add("-fbyte-code-and-object-code")
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
         compile_cmd.add("-fpackage-db-byte-code")
