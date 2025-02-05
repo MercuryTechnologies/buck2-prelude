@@ -1532,9 +1532,7 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
     if not tc.use_worker:
         return None
 
-    worker_target = ctx.actions.anon_target(
-        worker,
-        {
+    args = {
             "_cxx_toolchain": ctx.attrs._cxx_toolchain,
             "_generate_target_metadata": ctx.attrs._generate_target_metadata,
             "_ghc_wrapper": ctx.attrs._ghc_wrapper,
@@ -1555,7 +1553,14 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             ],
             "use_argsfile_at_link": False,
             "allow_worker": False,
-        },
+        }
+
+    worker_target = ctx.actions.anon_target(
+        worker,
+        args,
     )
-    return WorkerInfo(worker_target.artifact("worker"))
+    cmd = cmd_args(worker_target.artifact("worker"))
+    if tc.worker_single:
+        cmd.add("--single")
+    return WorkerInfo(cmd)
 
