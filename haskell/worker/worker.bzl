@@ -1,4 +1,5 @@
 worker_libs = [
+    "async",
     "base",
     "binary",
     "bytestring",
