@@ -889,8 +889,13 @@ def compile(
             "bash", "-euc",
             """\
             mkdir -p \"$0\"
+            shopt -s dotglob nullglob
             for stub; do
-              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
+              if [[ -d \"$stub\" ]]; then
+                for f in \"$stub/\"*; do
+                  cp -r \"$f\" \"$0\"
+                done
+              fi
             done
             """,
         ])
@@ -901,7 +906,6 @@ def compile(
         stub_copy_cmd,
         category = "haskell_stubs",
         identifier = artifact_suffix,
-        local_only = True,
     )
 
     return CompileResultInfo(
