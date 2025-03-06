@@ -107,13 +107,21 @@ def json_default_handler(o):
     raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
 
 
+def obtain_buildplan(args, paths):
+    result = run_ghc_buildplan(args.ghc, args.ghc_arg, args.source, paths)
+
+    return result
+
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
         ghc_depends = run_ghc_depends(args.cwd, args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
+        buildplan = obtain_buildplan(args, paths)["build_plan"]
     else:
+        # FIXME
         ghc_depends = load_toolchain_packages(args.build_plan)
-    th_modules = determine_th_modules(ghc_depends)
+    th_modules = determine_th_modules(buildplan)
+
     module_mapping = determine_module_mapping(ghc_depends, args.source_prefix)
     module_graph = determine_module_graph(ghc_depends)
     package_deps = determine_package_deps(ghc_depends)
@@ -130,20 +138,27 @@ def load_toolchain_packages(filepath):
         return json.load(f)
 
 
-def determine_th_modules(ghc_depends):
-    return [
-        modname
-        for modname, properties in ghc_depends.items()
-        if uses_th(properties.get("options", []))
-    ]
+def determine_th_modules(buildplan):
+    result = []
 
+    def handle_node(node):
+        if node["uses_th"]:
+            module_name = node["module_name"]
+            if node["is_boot"]:
+                module_name += "-boot"
+            result.append(module_name)
 
-__TH_EXTENSIONS = ["TemplateHaskell", "TemplateHaskellQuotes", "QuasiQuotes"]
+    for module in buildplan:
+        module_type = module["type"]
+        if module_type == "single-module":
+            handle_node(module["node"])
+        elif module_type == "resolved-cycle":
+            for node in module["nodes"]:
+                handle_node(node)
+        else:
+            raise Error("unknown module type: " + module_type)
 
-
-def uses_th(opts):
-    """Determine if a Template Haskell extension is enabled."""
-    return any([f"-X{ext}" in opts for ext in __TH_EXTENSIONS])
+    return set(result)
 
 
 def determine_module_mapping(ghc_depends, source_prefix):
@@ -209,6 +224,40 @@ def determine_package_deps(ghc_depends):
                 package_deps.setdefault(modname + "-boot", {})[pkgname] = pkgdep.get("modules", [])
 
     return package_deps
+
+
+def run_ghc_buildplan(ghc, ghc_args, sources, aux_paths):
+    with tempfile.TemporaryDirectory() as dname:
+        json_fname = os.path.join(dname, "buildplan.json")
+        haskell_sources = list(filter(is_haskell_src, sources))
+
+        args = [
+            ghc,
+            "-include-pkg-deps", # FIXME does have no effect currently
+            "--buildplan", json_fname,
+        ] + ghc_args + haskell_sources
+
+        env = os.environ.copy()
+        path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join([path] + aux_paths)
+
+        res = subprocess.run(args, env=env, capture_output=True)
+        if res.returncode != 0:
+            # Write the GHC command on failure.
+            print(shlex.join(args), file=sys.stderr)
+
+        # Always forward stdout/stderr.
+        # Note, Buck2 swallows stdout on successful builds.
+        # Redirect to stderr to avoid this.
+        sys.stderr.buffer.write(res.stdout)
+        sys.stderr.buffer.write(res.stderr)
+
+        if res.returncode != 0:
+            # Fail if GHC failed.
+            sys.exit(res.returncode)
+
+        with open(json_fname) as f:
+            return json.load(f)
 
 
 def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
