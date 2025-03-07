@@ -27,9 +27,7 @@ import tempfile
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        fromfile_prefix_chars="@")
+    parser = argparse.ArgumentParser(description=__doc__, fromfile_prefix_chars="@")
     parser.add_argument(
         "--output",
         required=True,
@@ -45,25 +43,29 @@ def main():
         required=False,
         type=str,
         action="append",
-        help="GHC compiler argument to forward to `ghc -M`, including package flags.")
+        help="GHC compiler argument to forward to `ghc -M`, including package flags.",
+    )
     parser.add_argument(
         "--source-prefix",
         required=True,
         type=str,
-        help="The path prefix to strip of module sources to extract module names.")
+        help="The path prefix to strip of module sources to extract module names.",
+    )
     parser.add_argument(
         "--source",
         required=True,
         type=str,
         action="append",
-        help="Haskell module source files of the current package.")
+        help="Haskell module source files of the current package.",
+    )
     parser.add_argument(
         "--package",
         required=False,
         type=str,
         action="append",
         default=[],
-        help="Package dependencies formated as `NAME:PREFIX_PATH`.")
+        help="Package dependencies formated as `NAME:PREFIX_PATH`.",
+    )
     parser.add_argument(
         "--bin-path",
         type=Path,
@@ -83,13 +85,14 @@ def main():
 def json_default_handler(o):
     if isinstance(o, set):
         return sorted(o)
-    raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
 
 def obtain_buildplan(args, paths):
     result = run_ghc_buildplan(args.ghc, args.ghc_arg, args.source, paths)
 
     return result
+
 
 def obtain_target_metadata(args):
     paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()]
@@ -170,15 +173,13 @@ def determine_module_graph(ghc_depends):
     module_deps = {}
     for modname, description in ghc_depends.items():
         module_deps[modname] = description.get("modules", []) + [
-            dep + "-boot"
-            for dep in description.get("modules-boot", [])
+            dep + "-boot" for dep in description.get("modules-boot", [])
         ]
 
         boot_description = description.get("boot", None)
         if boot_description != None:
             module_deps[modname + "-boot"] = boot_description.get("modules", []) + [
-                dep + "-boot"
-                for dep in boot_description.get("modules-boot", [])
+                dep + "-boot" for dep in boot_description.get("modules-boot", [])
             ]
 
     return module_deps
@@ -196,7 +197,9 @@ def determine_package_deps(ghc_depends):
         if boot_description != None:
             for pkgdep in boot_description.get("packages", {}):
                 pkgname = pkgdep.get("name")
-                package_deps.setdefault(modname + "-boot", {})[pkgname] = pkgdep.get("modules", [])
+                package_deps.setdefault(modname + "-boot", {})[pkgname] = pkgdep.get(
+                    "modules", []
+                )
 
     return package_deps
 
@@ -314,7 +317,7 @@ def strip_prefix_(prefix, s):
 
 def strip_prefix(prefix, s):
     if s.startswith(prefix):
-        return s[len(prefix):]
+        return s[len(prefix) :]
 
     return None
 
