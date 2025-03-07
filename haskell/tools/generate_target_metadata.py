@@ -102,6 +102,7 @@ def obtain_target_metadata(args):
     th_modules = determine_th_modules(buildplan)
     module_mapping = determine_module_mapping(buildplan, args.source_prefix)
     module_graph = determine_module_graph(buildplan)
+    # TODO(cb) determine package deps from build plan
     package_deps = determine_package_deps(ghc_depends)
     return {
         "th_modules": th_modules,
