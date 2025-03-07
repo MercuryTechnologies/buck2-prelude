@@ -125,7 +125,7 @@ def obtain_target_metadata(args):
     th_modules = determine_th_modules(buildplan)
 
     module_mapping = determine_module_mapping(buildplan, args.source_prefix)
-    module_graph = determine_module_graph(ghc_depends)
+    module_graph = determine_module_graph(buildplan)
     package_deps = determine_package_deps(ghc_depends)
     return {
         "th_modules": th_modules,
@@ -197,20 +197,25 @@ def determine_module_mapping(buildplan, source_prefix):
     return result
 
 
-def determine_module_graph(ghc_depends):
+def determine_module_graph(buildplan):
     module_deps = {}
-    for modname, description in ghc_depends.items():
-        module_deps[modname] = description.get("modules", []) + [
-            dep + "-boot"
-            for dep in description.get("modules-boot", [])
-        ]
 
-        boot_description = description.get("boot", None)
-        if boot_description != None:
-            module_deps[modname + "-boot"] = boot_description.get("modules", []) + [
-                dep + "-boot"
-                for dep in boot_description.get("modules-boot", [])
-            ]
+    def handle_node(node):
+        module_deps[module_name(node)] = set(
+            module_name(dep)
+            for dep in node["dependencies"]
+        )
+
+    for module in buildplan:
+        module_type = module["type"]
+
+        if module_type == "single-module":
+            handle_node(module["node"])
+        elif module_type == "resolved-cycle":
+            for node in module["nodes"]:
+                handle_node(node)
+        else:
+            raise Error("unknown module type: " + module_type)
 
     return module_deps
 
