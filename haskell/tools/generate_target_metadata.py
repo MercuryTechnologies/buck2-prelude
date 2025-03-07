@@ -140,15 +140,26 @@ def load_toolchain_packages(filepath):
         return json.load(f)
 
 
+def module_name(node):
+    name = node["module_name"]
+
+    return name + "-boot" if node["is_boot"] else name
+
+
+def apparent_name(node, source_prefix):
+    name = src_to_module_name(
+        strip_prefix_(source_prefix, node["hs_path"]).lstrip("/")
+    )
+
+    return name + "-boot" if node["is_boot"] else name
+
+
 def determine_th_modules(buildplan):
     result = []
 
     def handle_node(node):
         if node["uses_th"]:
-            module_name = node["module_name"]
-            if node["is_boot"]:
-                module_name += "-boot"
-            result.append(module_name)
+            result.append(module_name(node))
 
     for module in buildplan:
         module_type = module["type"]
@@ -167,15 +178,10 @@ def determine_module_mapping(buildplan, source_prefix):
     result = {}
 
     def handle_node(node):
-        module_name = node["module_name"]
-        apparent_name = src_to_module_name(
-            strip_prefix_(source_prefix, node["hs_path"]).lstrip("/")
-        )
-        if node["is_boot"]:
-            module_name += "-boot"
-            apparent_name += "-boot"
-        if apparent_name != module_name:
-            result[apparent_name] = module_name
+        modname = module_name(node)
+        appname = apparent_name(node, source_prefix)
+        if appname != modname:
+            result[appname] = modname
 
     for module in buildplan:
         module_type = module["type"]
