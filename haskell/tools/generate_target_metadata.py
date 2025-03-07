@@ -119,7 +119,9 @@ def main():
 
     result = obtain_target_metadata(args)
 
-    json.dump(result, args.output, indent=4, default=json_default_handler)
+    json.dump(
+        result, args.output, indent=4, sort_keys=True, default=json_default_handler
+    )
 
 
 def json_default_handler(o):
