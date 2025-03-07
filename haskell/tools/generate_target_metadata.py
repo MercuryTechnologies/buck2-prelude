@@ -159,6 +159,8 @@ def determine_th_modules(buildplan):
     result = []
 
     def handle_node(node):
+        if node["compile-or-link"] == "link":
+            return
         if node["uses_th"]:
             result.append(module_name(node))
 
@@ -179,6 +181,8 @@ def determine_module_mapping(buildplan, source_prefix):
     result = {}
 
     def handle_node(node):
+        if node["compile-or-link"] == "link":
+            return
         modname = module_name(node)
         appname = apparent_name(node, source_prefix)
         if appname != modname:
@@ -202,6 +206,8 @@ def determine_module_graph(buildplan):
     module_deps = {}
 
     def handle_node(node):
+        if node["compile-or-link"] == "link":
+            return
         module_deps[module_name(node)] = set(
             module_name(dep)
             for dep in node["dependencies"]
