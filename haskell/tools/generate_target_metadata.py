@@ -124,7 +124,7 @@ def obtain_target_metadata(args):
         ghc_depends = load_toolchain_packages(args.build_plan)
     th_modules = determine_th_modules(buildplan)
 
-    module_mapping = determine_module_mapping(ghc_depends, args.source_prefix)
+    module_mapping = determine_module_mapping(buildplan, args.source_prefix)
     module_graph = determine_module_graph(ghc_depends)
     package_deps = determine_package_deps(ghc_depends)
     return {
@@ -163,32 +163,30 @@ def determine_th_modules(buildplan):
     return set(result)
 
 
-def determine_module_mapping(ghc_depends, source_prefix):
+def determine_module_mapping(buildplan, source_prefix):
     result = {}
 
-    for modname, properties in ghc_depends.items():
-        sources = list(filter(is_haskell_src, properties.get("sources", [])))
+    def handle_node(node):
+        module_name = node["module_name"]
+        apparent_name = src_to_module_name(
+            strip_prefix_(source_prefix, node["hs_path"]).lstrip("/")
+        )
+        if node["is_boot"]:
+            module_name += "-boot"
+            apparent_name += "-boot"
+        if apparent_name != module_name:
+            result[apparent_name] = module_name
 
-        if len(sources) != 1:
-            raise RuntimeError(f"Expected exactly one Haskell source for module '{modname}' but got '{sources}'.")
+    for module in buildplan:
+        module_type = module["type"]
 
-        apparent_name = src_to_module_name(strip_prefix_(source_prefix, sources[0]).lstrip("/"))
-
-        if apparent_name != modname:
-            result[apparent_name] = modname
-
-        boot_properties = properties.get("boot", None)
-        if boot_properties != None:
-            boot_modname = modname + "-boot"
-            boot_sources = list(filter(is_haskell_boot, boot_properties.get("sources", [])))
-
-            if len(boot_sources) != 1:
-                raise RuntimeError(f"Expected at most one Haskell boot file for module '{modname}' but got '{boot_sources}'.")
-
-            boot_apparent_name = src_to_module_name(strip_prefix_(source_prefix, boot_sources[0]).lstrip("/")) + "-boot"
-
-            if boot_apparent_name != boot_modname:
-                result[boot_apparent_name] = boot_modname
+        if module_type == "single-module":
+            handle_node(module["node"])
+        elif module_type == "resolved-cycle":
+            for node in module["nodes"]:
+                handle_node(node)
+        else:
+            raise Error("unknown module type: " + module_type)
 
     return result
 
