@@ -422,23 +422,23 @@ CommonCompileModuleArgs = record(
 )
 
 def _common_compile_module_args(
-    actions: AnalysisActions,
-    *,
-    compiler_flags: list[ArgLike],
-    ghc_wrapper: RunInfo,
-    haskell_toolchain: HaskellToolchainInfo,
-    pkg_deps: ResolvedDynamicValue | None,
-    enable_haddock: bool,
-    enable_profiling: bool,
-    link_style: LinkStyle,
-    main: None | str,
-    label: Label,
-    deps: list[Dependency],
-    external_tool_paths: list[RunInfo],
-    sources: list[Artifact],
-    direct_deps_info: list[HaskellLibraryInfoTSet],
-    pkgname: str | None = None,
-) -> CommonCompileModuleArgs:
+        actions: AnalysisActions,
+        *,
+        compiler_flags: list[ArgLike],
+        ghc_wrapper: RunInfo,
+        haskell_toolchain: HaskellToolchainInfo,
+        pkg_deps: ResolvedDynamicValue | None,
+        enable_haddock: bool,
+        enable_profiling: bool,
+        link_style: LinkStyle,
+        main: None | str,
+        label: Label,
+        deps: list[Dependency],
+        external_tool_paths: list[RunInfo],
+        sources: list[Artifact],
+        non_haskell_sources_tag: ArtifactTag,
+        direct_deps_info: list[HaskellLibraryInfoTSet],
+        pkgname: str | None = None) -> CommonCompileModuleArgs:
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
 
@@ -461,10 +461,7 @@ def _common_compile_module_args(
         if not is_haskell_src(path) and not is_haskell_boot(path)
     ]
 
-    if non_haskell_sources:
-        warning("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead".format(label))
-
-    args_for_file = cmd_args(hidden = non_haskell_sources)
+    args_for_file = cmd_args(hidden = non_haskell_sources_tag.tag_inputs(cmd_args(non_haskell_sources)))
 
     args_for_file.add("-no-link", "-i")
     args_for_file.add("-hide-all-packages")
@@ -557,28 +554,28 @@ def _common_compile_module_args(
     )
 
 def _compile_module(
-    actions: AnalysisActions,
-    *,
-    common_args: CommonCompileModuleArgs,
-    link_style: LinkStyle,
-    enable_profiling: bool,
-    enable_th: bool,
-    haskell_toolchain: HaskellToolchainInfo,
-    label: Label,
-    module_name: str,
-    module: _Module,
-    module_tsets: dict[str, CompiledModuleTSet],
-    md_file: Artifact,
-    graph: dict[str, list[str]],
-    package_deps: dict[str, list[str]],
-    outputs: dict[Artifact, OutputArtifact],
-    artifact_suffix: str,
-    direct_deps_by_name: dict[str, typing.Any],
-    toolchain_deps_by_name: dict[str, None],
-    aux_deps: None | list[Artifact],
-    src_envs: None | dict[str, ArgLike],
-    source_prefixes: list[str],
-) -> CompiledModuleTSet:
+        actions: AnalysisActions,
+        *,
+        common_args: CommonCompileModuleArgs,
+        link_style: LinkStyle,
+        enable_profiling: bool,
+        enable_th: bool,
+        haskell_toolchain: HaskellToolchainInfo,
+        label: Label,
+        module_name: str,
+        module: _Module,
+        module_tsets: dict[str, CompiledModuleTSet],
+        md_file: Artifact,
+        non_haskell_sources_tag: ArtifactTag,
+        graph: dict[str, list[str]],
+        package_deps: dict[str, list[str]],
+        outputs: dict[Artifact, OutputArtifact],
+        artifact_suffix: str,
+        direct_deps_by_name: dict[str, typing.Any],
+        toolchain_deps_by_name: dict[str, None],
+        aux_deps: None | list[Artifact],
+        src_envs: None | dict[str, ArgLike],
+        source_prefixes: list[str]) -> CompiledModuleTSet:
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
@@ -594,6 +591,15 @@ def _compile_module(
     ])).as_output()
     tagged_dep_file = packagedb_tag.tag_artifacts(dep_file)
     compile_args_for_file.add("--buck2-packagedb-dep", tagged_dep_file)
+
+    non_haskell_sources_dep_file = actions.declare_output(".".join([
+        label.name,
+        module_name or "pkg",
+        "non_hs_srcs",
+        "dep",
+    ])).as_output()
+    tagged_non_haskell_sources_dep_file = non_haskell_sources_tag.tag_artifacts(non_haskell_sources_dep_file)
+    compile_args_for_file.add("--buck2-non-hs-dep", tagged_non_haskell_sources_dep_file)
 
     objects = [outputs[obj] for obj in module.objects]
     his = [outputs[hi] for hi in module.interfaces]
@@ -713,6 +719,7 @@ def _compile_module(
         dep_files = {
             "abi": abi_tag,
             "packagedb": packagedb_tag,
+            "non-haskell": non_haskell_sources_tag,
         },
         # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
@@ -731,6 +738,8 @@ def _compile_module(
     return module_tset
 
 def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_name, outputs):
+    non_haskell_sources_tag = actions.artifact_tag()
+
     common_args = _common_compile_module_args(
         actions,
         compiler_flags = arg.compiler_flags,
@@ -742,6 +751,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
         main = arg.main,
         pkg_deps = pkg_deps,
         sources = arg.sources,
+        non_haskell_sources_tag = non_haskell_sources_tag,
         enable_haddock = arg.enable_haddock,
         enable_profiling = arg.enable_profiling,
         link_style = arg.link_style,
@@ -778,6 +788,7 @@ def _dynamic_do_compile_impl(actions, md_file, pkg_deps, arg, direct_deps_by_nam
             package_deps = package_deps.get(module_name, {}),
             outputs = outputs,
             md_file = arg.md_file,
+            non_haskell_sources_tag = non_haskell_sources_tag,
             artifact_suffix = arg.artifact_suffix,
             direct_deps_by_name = direct_deps_by_name,
             toolchain_deps_by_name = arg.toolchain_deps_by_name,

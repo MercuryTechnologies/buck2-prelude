@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import json
+import tempfile
 
 
 def main():
@@ -24,6 +26,11 @@ def main():
         required=True,
         help="Path to the dep file.",
     )
+    parser.add_argument(
+        "--buck2-non-hs-dep",
+        required=False,
+        type=Path,
+        help="Path to dep file for non-haskell sources")
     parser.add_argument(
         "--buck2-packagedb-dep",
         required=True,
@@ -98,6 +105,39 @@ def main():
     returncode = subprocess.call(cmd, env=env, stdout=sys.stderr.buffer)
     if returncode != 0:
         return returncode
+
+    # after compilation, observe the build plan and mark non-haskell sources as used
+    if "-c" in cmd:             # TODO(cb) make this less ad hoc
+        c = cmd.copy()
+        c.remove("-c")
+
+        # remove -ohi, since that is incompatible with --buildplan
+        ohi_index = c.index("-ohi")
+        if ohi_index >= 0:
+            del c[ohi_index:ohi_index+2]
+        odir_index = c.index("-odir")
+
+        # ensure ghc can find the interface file
+        if odir_index >= 0:
+            odir = c[odir_index + 1]
+            c.append(f"-i{odir}")
+
+        with tempfile.NamedTemporaryFile() as f:
+            subprocess.check_call(c + ["--buildplan", f.name], env=env, stdout=sys.stderr.buffer)
+            buildplan = json.load(f)
+
+        usage_files = { u["usage_file"]: u for u in buildplan["usage_files"]}
+
+        if args.buck2_non_hs_dep:
+            try:
+                with open(args.buck2_non_hs_dep, "w") as f:
+                    used_files = [used for used in usage_files.keys() if not Path(used).is_absolute()]
+                    f.write("\n".join(used_files))
+            except Exception as e:
+                # remove incomplete dep file
+                os.remove(args.buck2_non_hs_dep)
+                raise e
+
 
     recompute_abi_hash(args.ghc, args.abi_out)
 
