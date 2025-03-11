@@ -111,13 +111,16 @@ def main():
         c = cmd.copy()
         c.remove("-c")
 
-        # remove -ohi, since that is incompatible with --buildplan
-        ohi_index = c.index("-ohi")
-        if ohi_index >= 0:
+        # remove -ohi, -dynohi, since that is incompatible with --buildplan
+        if "-ohi" in c:
+            ohi_index = c.index("-ohi")
             del c[ohi_index:ohi_index+2]
-        odir_index = c.index("-odir")
+        if "-dynohi" in c:
+            dynohi_index = c.index("-dynohi")
+            del c[dynohi_index:dynohi_index+2]
 
         # ensure ghc can find the interface file
+        odir_index = c.index("-odir")
         if odir_index >= 0:
             odir = c[odir_index + 1]
             c.append(f"-i{odir}")
