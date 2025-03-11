@@ -29,20 +29,15 @@ import tempfile
 def main():
     parser = argparse.ArgumentParser(description=__doc__, fromfile_prefix_chars="@")
     parser.add_argument(
-        "--buildplan",
-        required=True,
-        type=argparse.FileType("w"),
-        help="Write build plan to this file in JSON format.",
-    )
-    parser.add_argument(
         "--output",
         required=True,
         type=argparse.FileType("w"),
-        help="Write package metadata to this file in JSON format.",
-    )
+        help="Write package metadata to this file in JSON format.")
     parser.add_argument(
-        "--ghc", required=True, type=str, help="Path to the Haskell compiler GHC."
-    )
+        "--ghc",
+        required=True,
+        type=str,
+        help="Path to the Haskell compiler GHC.")
     parser.add_argument(
         "--ghc-arg",
         required=False,
@@ -96,9 +91,6 @@ def json_default_handler(o):
 def obtain_buildplan(args, paths):
     result = run_ghc_buildplan(args.ghc, args.ghc_arg, args.source, paths)
 
-    # XXX remove
-    json.dump(result, args.buildplan, indent=4, default=json_default_handler)
-
     return result
 
 
@@ -112,9 +104,6 @@ def obtain_target_metadata(args):
     module_graph = determine_module_graph(buildplan)
     # TODO(cb) determine package deps from build plan
     package_deps = determine_package_deps(ghc_depends)
-
-    with open("dep.json", "w") as dep_json:
-        json.dump(ghc_depends, dep_json, indent=4, default=json_default_handler)
     return {
         "th_modules": th_modules,
         "module_mapping": module_mapping,
@@ -239,17 +228,8 @@ def run_ghc_buildplan(ghc, ghc_args, sources, aux_paths):
         haskell_sources = list(filter(is_haskell_src, sources))
 
         args = [
-                "strace",
-                "-e",
-                "%file",
-                "-ff",
-                "-s",
-                "1024",
-                "-o",
-                "buildplan_strace",
             ghc,
             "-include-pkg-deps", # FIXME does have no effect currently
-            "-dynamic",
             "--buildplan", json_fname,
         ] + ghc_args + haskell_sources
 
@@ -275,30 +255,20 @@ def run_ghc_buildplan(ghc, ghc_args, sources, aux_paths):
         with open(json_fname) as f:
             return json.load(f)
 
-
 def run_ghc_depends(ghc, ghc_args, sources, aux_paths):
     with tempfile.TemporaryDirectory() as dname:
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
         haskell_sources = list(filter(is_haskell_src, sources))
 
-        args = (
-            [
-                ghc,
-                "-M",
-                "-include-pkg-deps",
-                # Note: `-outputdir '.'` removes the prefix of all targets:
-                #       backend/src/Foo/Util.<ext> => Foo/Util.<ext>
-                "-outputdir",
-                ".",
-                "-dep-json",
-                json_fname,
-                "-dep-makefile",
-                make_fname,
-            ]
-            + ghc_args
-            + haskell_sources
-        )
+        args = [
+            ghc, "-M", "-include-pkg-deps",
+            # Note: `-outputdir '.'` removes the prefix of all targets:
+            #       backend/src/Foo/Util.<ext> => Foo/Util.<ext>
+            "-outputdir", ".",
+            "-dep-json", json_fname,
+            "-dep-makefile", make_fname,
+        ] + ghc_args + haskell_sources
 
         env = os.environ.copy()
         path = env.get("PATH", "")
