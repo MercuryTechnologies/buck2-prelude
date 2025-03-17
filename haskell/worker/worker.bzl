@@ -27,15 +27,21 @@ worker_srcs_shared = [
     "@prelude//haskell/worker/impl/plugin/src:Internal/Args.hs",
     "@prelude//haskell/worker/impl/plugin/src:Internal/Cache.hs",
     "@prelude//haskell/worker/impl/plugin/src:Internal/Compile.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/CompileHpt.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/CompileMake.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Debug.hs",
     "@prelude//haskell/worker/impl/plugin/src:Internal/Error.hs",
     "@prelude//haskell/worker/impl/plugin/src:Internal/Log.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/MakeFile.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/MakeFile/JSON.hs",
+    "@prelude//haskell/worker/impl/plugin/src:Internal/Metadata.hs",
     "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
     "@prelude//haskell/worker/impl/buck-worker/lib:BuckArgs.hs",
     "@prelude//haskell/worker/impl/buck-worker/lib:BuckWorker.hs",
 ]
 
 worker_srcs = worker_srcs_shared + [
-    "@prelude//haskell/worker/impl/buck-worker:Main.hs",
+    "@prelude//haskell/worker/impl/buck-worker/app:Main.hs",
 ]
 
 worker_srcs_multiplexer = worker_srcs_shared + [
