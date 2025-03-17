@@ -854,6 +854,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     md_file = target_metadata(
         ctx,
         sources = ctx.attrs.srcs,
+        worker = _persistent_worker(ctx),
     )
 
     # The non-profiling library is also needed to build the package with
@@ -1214,7 +1215,11 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     if enable_profiling and link_style == LinkStyle("shared"):
         link_style = LinkStyle("static")
 
-    md_file = target_metadata(ctx, sources = ctx.attrs.srcs)
+    md_file = target_metadata(
+        ctx,
+        sources = ctx.attrs.srcs,
+        worker = _persistent_worker(ctx),
+    )
 
     # Provisional hack to have a worker ID
     libname = repr(ctx.label.path).replace("//", "_").replace("/", "_") + "_" + ctx.label.name
@@ -1539,6 +1544,7 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
             "srcs": tc.worker_srcs_multiplexer if tc.use_worker_multiplexer else tc.worker_srcs,
             "compiler_flags": tc.worker_compiler_flags + [
                 "-O2",
+                "-DBUCK",
             ],
             "linker_flags": [
                 "-dynamic",
