@@ -204,8 +204,6 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args = cmd_args(arg.md_gen)
     md_args.add(packages_info.bin_paths)
     md_args.add("--ghc", arg.haskell_toolchain.compiler)
-    if arg.haskell_toolchain.use_worker and arg.haskell_toolchain.use_worker_multiplexer and False:
-        md_args.add("--worker-target-id", "haskell_metadata")
     md_args.add(cmd_args(ghc_args, format="--ghc-arg={}"))
     md_args.add(
         "--source-prefix",
@@ -218,12 +216,64 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     )
     md_args.add("--output", output)
 
-    actions.run(
-        md_args,
-        category = "haskell_metadata",
-        identifier = arg.suffix if arg.suffix else None,
-        weight = 8,
-    )
+    haskell_toolchain = arg.haskell_toolchain
+    if arg.allow_worker and haskell_toolchain.use_worker:
+        bp_args = cmd_args()
+        bp_args.add("--ghc", arg.haskell_toolchain.compiler)
+        bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
+        if haskell_toolchain.use_worker_multiplexer:
+            if haskell_toolchain.worker_multiplexer_plugin == None:
+                fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
+            if arg.pkgname == None:
+                warning("Module {} has no 'pkgname', worker multiplexer will break".format(arg.pkgname))
+            else:
+                package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+                db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
+                bp_args.add("--plugin-db", db.value.db)
+            if haskell_toolchain.worker_multiplexer_custom:
+                bp_args.add("--worker-multiplexer-custom")
+        if arg.pkgname != None:
+            bp_args.add("--worker-target-id", arg.pkgname)
+
+        build_plan = actions.declare_output(arg.pkgname + ".depends.json")
+        makefile = actions.declare_output(arg.pkgname + ".depends.make")
+
+        bp_args.add("-j")
+        bp_args.add("-hide-all-packages")
+        bp_args.add("-include-pkg-deps")
+        bp_args.add(packages_info.bin_paths)
+        bp_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
+        bp_args.add(cmd_args(packages_info.exposed_package_args))
+        bp_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
+        bp_args.add(arg.compiler_flags)
+        bp_args.add("-M")
+        bp_args.add("-dep-json", build_plan.as_output())
+        bp_args.add("-dep-makefile", makefile.as_output())
+        bp_args.add("-outputdir", ".")
+        bp_args.add("-this-unit-id", arg.pkgname)
+        bp_args.add(cmd_args(arg.sources))
+
+        actions.run(
+            bp_args,
+            category = "haskell_buildplan",
+            identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
+            exe = WorkerRunInfo(worker = arg.worker),
+        )
+        md_args.add("--build-plan", build_plan)
+        actions.run(
+            md_args,
+            category = "haskell_metadata",
+            identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
+        )
+    else:
+        actions.run(
+            md_args,
+            category = "haskell_metadata",
+            identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
+        )
 
     return []
 
@@ -241,6 +291,7 @@ def target_metadata(
         *,
         sources: list[Artifact],
         suffix: str = "",
+        worker: WorkerInfo | None,
     ) -> Artifact:
     md_file = ctx.actions.declare_output(ctx.label.name + suffix + ".md.json")
     md_gen = ctx.attrs._generate_target_metadata[RunInfo]
@@ -280,6 +331,9 @@ def target_metadata(
             strip_prefix = _strip_prefix(str(ctx.label.cell_root), str(ctx.label.path)),
             suffix = suffix,
             toolchain_libs = toolchain_libs,
+            worker = worker,
+            allow_worker = ctx.attrs.allow_worker,
+            pkgname = pkgname,
         ),
     ))
 
@@ -736,7 +790,8 @@ def _compile_module(
         compile_cmd.add(l.lib_path)
         compile_cmd.add("-l{}".format(l.name))
 
-    compile_cmd.add("-fwrite-if-simplified-core")
+    # compile_cmd.add("-fwrite-if-simplified-core")
+    compile_cmd.add("-fbyte-code-and-object-code")
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
         compile_cmd.add("-fpackage-db-byte-code")
