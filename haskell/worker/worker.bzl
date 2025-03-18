@@ -10,16 +10,16 @@ worker_libs = [
     "extra",
     "filepath",
     "ghc",
-    "grpc-haskell",
+    "grapesy",
+    "lens-family",
     "network",
     "process",
-    "proto3-suite",
-    "proto3-wire",
+    "proto-lens",
+    "proto-lens-runtime",
     "stm",
     "text",
     "transformers",
     "vector",
-    "unix",
 ]
 
 worker_srcs_shared = [
@@ -32,6 +32,8 @@ worker_srcs_shared = [
     "@prelude//haskell/worker/impl/plugin/src:Internal/Session.hs",
     "@prelude//haskell/worker/impl/buck-worker/lib:BuckArgs.hs",
     "@prelude//haskell/worker/impl/buck-worker/lib:BuckWorker.hs",
+    "@prelude//haskell/worker/impl/buck-worker/lib:Proto/Worker.hs",
+    "@prelude//haskell/worker/impl/buck-worker/lib:Proto/Worker_Fields.hs",
 ]
 
 worker_srcs = worker_srcs_shared + [
@@ -49,6 +51,7 @@ worker_srcs_multiplexer = worker_srcs_shared + [
 worker_flags = [
     "-Wall",
     "-XBlockArguments",
+    "-XDataKinds",
     "-XDerivingStrategies",
     "-XDuplicateRecordFields",
     "-XGHC2021",
@@ -58,4 +61,5 @@ worker_flags = [
     "-XOverloadedStrings",
     "-XRecordWildCards",
     "-XStrictData",
+    "-XTypeFamilies",
 ]
