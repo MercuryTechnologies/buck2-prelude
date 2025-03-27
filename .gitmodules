@@ -1,3 +1,0 @@
-[submodule "haskell/worker/impl"]
-	path = haskell/worker/impl
-	url = git@github.com:MercuryTechnologies/ghc-persistent-worker
