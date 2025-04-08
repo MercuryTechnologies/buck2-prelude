@@ -37,6 +37,11 @@ def main():
         help="Path to the dep file.",
     )
     parser.add_argument(
+        "--usagefiles",
+        required=True,
+        help="Path to the usagefiles.hs script",
+    )
+    parser.add_argument(
         "--buck2-package-db",
         required=False,
         nargs="*",
@@ -106,40 +111,33 @@ def main():
     if returncode != 0:
         return returncode
 
-    # after compilation, observe the build plan and mark non-haskell sources as used
-    if "-c" in cmd:             # TODO(cb) make this less ad hoc
-        c = cmd.copy()
-        c.remove("-c")
+    # after compilation mark non-haskell sources as used
+    if args.buck2_non_hs_dep:
+        if "-ohi" in cmd:
+            ohi_index = cmd.index("-ohi")
+            hi_file = cmd[ohi_index+1]
+        elif "-dynohi" in cmd:
+            dynohi_index = cmd.index("-dynohi")
+            hi_file = cmd[dynohi_index+1]
 
-        # remove -ohi, -dynohi, since that is incompatible with --buildplan
-        if "-ohi" in c:
-            ohi_index = c.index("-ohi")
-            del c[ohi_index:ohi_index+2]
-        if "-dynohi" in c:
-            dynohi_index = c.index("-dynohi")
-            del c[dynohi_index:dynohi_index+2]
+        usage_files = subprocess.check_output([
+            args.ghc,
+            "-package-env", "-",
+            "-package", "ghc",
+            "--run",
+            args.usagefiles,
+            "--",
+            hi_file
+        ], env=env, text=True)
 
-        # ensure ghc can find the interface file
-        odir_index = c.index("-odir")
-        if odir_index >= 0:
-            odir = c[odir_index + 1]
-            c.append(f"-i{odir}")
-
-        with tempfile.NamedTemporaryFile() as f:
-            subprocess.check_call(c + ["--buildplan", f.name], env=env, stdout=sys.stderr.buffer)
-            buildplan = json.load(f)
-
-        usage_files = { u["usage_file"]: u for u in buildplan["usage_files"]}
-
-        if args.buck2_non_hs_dep:
-            try:
-                with open(args.buck2_non_hs_dep, "w") as f:
-                    used_files = [used for used in usage_files.keys() if not Path(used).is_absolute()]
-                    f.write("\n".join(used_files))
-            except Exception as e:
-                # remove incomplete dep file
-                os.remove(args.buck2_non_hs_dep)
-                raise e
+        try:
+            with open(args.buck2_non_hs_dep, "w") as f:
+                used_files = [used for used in usage_files.splitlines() if not Path(used).is_absolute()]
+                f.write("\n".join(used_files))
+        except Exception as e:
+            # remove incomplete dep file
+            os.remove(args.buck2_non_hs_dep)
+            raise e
 
 
     recompute_abi_hash(args.ghc, args.abi_out)

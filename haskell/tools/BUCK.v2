@@ -19,7 +19,20 @@ prelude.python_bootstrap_binary(
 )
 
 prelude.python_bootstrap_binary(
-    name = "ghc_wrapper",
+    name = "ghc_wrapper.py",
     main = "ghc_wrapper.py",
+)
+
+export_file(
+    name = "usagefiles.hs",
+    src = "usagefiles.hs",
+)
+
+prelude.command_alias(
+    name = "ghc_wrapper",
+    args = [
+      "--usagefiles", "$(location :usagefiles.hs)"
+    ],
+    exe = ":ghc_wrapper.py",
     visibility = ["PUBLIC"],
 )
