@@ -217,23 +217,11 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args.add("--output", output)
 
     haskell_toolchain = arg.haskell_toolchain
-    if arg.allow_worker and haskell_toolchain.use_worker:
+    if arg.allow_worker and haskell_toolchain.use_worker and arg.haskell_toolchain.worker_make:
         bp_args = cmd_args()
         bp_args.add("--ghc", arg.haskell_toolchain.compiler)
         bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
-        if haskell_toolchain.use_worker_multiplexer:
-            if haskell_toolchain.worker_multiplexer_plugin == None:
-                fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
-            if arg.pkgname == None:
-                warning("Module {} has no 'pkgname', worker multiplexer will break".format(arg.pkgname))
-            else:
-                package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
-                db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
-                bp_args.add("--plugin-db", db.value.db)
-            if haskell_toolchain.worker_multiplexer_custom:
-                bp_args.add("--worker-multiplexer-custom")
-        if arg.pkgname != None:
-            bp_args.add("--worker-target-id", arg.pkgname)
+        add_worker_args(bp_args, haskell_toolchain, pkg_deps, arg.label, arg.pkgname)
 
         build_plan = actions.declare_output(arg.pkgname + ".depends.json")
         makefile = actions.declare_output(arg.pkgname + ".depends.make")
@@ -334,6 +322,7 @@ def target_metadata(
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
             pkgname = pkgname,
+            label = ctx.label,
         ),
     ))
 
@@ -484,6 +473,27 @@ CommonCompileModuleArgs = record(
     package_env_args = field(cmd_args),
 )
 
+def add_worker_args(
+    command: cmd_args,
+    haskell_toolchain: HaskellToolchainInfo,
+    pkg_deps: ResolvedDynamicValue | None,
+    label: Label,
+    pkgname: str | None,
+) -> None:
+    if haskell_toolchain.use_worker_multiplexer:
+        if haskell_toolchain.worker_multiplexer_plugin == None:
+            fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
+        if pkgname == None:
+            warning("Module {} has no 'pkgname', worker multiplexer will break".format(label))
+        else:
+            package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+            db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
+            command.add("--plugin-db", db.value.db)
+        if haskell_toolchain.worker_multiplexer_custom:
+            command.add("--worker-multiplexer-custom")
+    if pkgname != None:
+        command.add("--worker-target-id", pkgname)
+
 def _common_compile_module_args(
     actions: AnalysisActions,
     *,
@@ -510,19 +520,7 @@ def _common_compile_module_args(
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
 
     if allow_worker and haskell_toolchain.use_worker:
-        if haskell_toolchain.use_worker_multiplexer:
-            if haskell_toolchain.worker_multiplexer_plugin == None:
-                fail("'worker_multiplexer_plugin' must be set on the toolchain if 'use_worker_multiplexer' is true")
-            if pkgname == None:
-                warning("Module {} has no 'pkgname', worker multiplexer will break".format(label))
-            else:
-                package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
-                db = package_db[haskell_toolchain.worker_multiplexer_plugin[HaskellToolchainLibrary].name]
-                command.add("--plugin-db", db.value.db)
-            if haskell_toolchain.worker_multiplexer_custom:
-                command.add("--worker-multiplexer-custom")
-        if pkgname != None:
-            command.add("--worker-target-id", pkgname)
+        add_worker_args(command, haskell_toolchain, pkg_deps, label, pkgname)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
