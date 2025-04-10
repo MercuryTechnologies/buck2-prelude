@@ -1566,7 +1566,10 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
         args,
     )
     cmd = cmd_args(worker_target.artifact("worker"))
-    if tc.worker_single:
+    # For now, running the make worker without `--single` will break horribly
+    if tc.worker_single or tc.worker_make:
         cmd.add("--single")
+    if tc.worker_make:
+        cmd.add("--make")
     return WorkerInfo(cmd)
 
