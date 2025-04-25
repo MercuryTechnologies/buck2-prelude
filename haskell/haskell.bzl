@@ -9,6 +9,7 @@
 
 load("@prelude//utils:arglike.bzl", "ArgLike")
 load("@prelude//:paths.bzl", "paths")
+load("@prelude//cxx:link_groups_types.bzl", "LINK_GROUP_MAP_ATTR")
 load("@prelude//cxx:archive.bzl", "make_archive")
 load(
     "@prelude//cxx:cxx.bzl",
@@ -151,6 +152,8 @@ load(
 load("@prelude//utils:argfile.bzl", "at_argfile")
 load("@prelude//utils:set.bzl", "set")
 load("@prelude//utils:utils.bzl", "filter_and_map_idx", "flatten")
+load("@prelude//decls:native_common.bzl", "native_common")
+load("@prelude//decls:haskell_common.bzl", "haskell_common")
 
 HaskellIndexingTSet = transitive_set()
 
@@ -644,7 +647,7 @@ def _build_haskell_lib(
         enable_haddock = enable_haddock,
         md_file = md_file,
         pkgname = pkgname,
-        worker = _persistent_worker(ctx),
+        worker = _persistent_worker_local(ctx),
     )
     solibs = {}
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
@@ -847,7 +850,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     md_file = target_metadata(
         ctx,
         sources = ctx.attrs.srcs,
-        worker = _persistent_worker(ctx),
+        worker = _persistent_worker_local(ctx),
     )
     sub_targets["metadata"] = [DefaultInfo(default_output = md_file)]
 
@@ -1212,7 +1215,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     md_file = target_metadata(
         ctx,
         sources = ctx.attrs.srcs,
-        worker = _persistent_worker(ctx),
+        worker = _persistent_worker_local(ctx),
     )
 
     # Provisional hack to have a worker ID
@@ -1225,7 +1228,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_profiling = enable_profiling,
         enable_haddock = False,
         md_file = md_file,
-        worker = _persistent_worker(ctx),
+        worker = _persistent_worker_local(ctx),
         pkgname = pkgname,
     )
 
@@ -1506,3 +1509,79 @@ def _persistent_worker(ctx: AnalysisContext) -> WorkerInfo | None:
         return WorkerInfo(cmd)
     else:
         return None
+
+worker = anon_rule(
+    impl = haskell_binary_impl,
+    attrs = {
+        "_cxx_toolchain": attrs.dep(),
+        "_generate_target_metadata": attrs.dep(providers = [RunInfo]),
+        "_ghc_wrapper": attrs.dep(providers = [RunInfo]),
+        "_haskell_toolchain": attrs.dep(providers = [HaskellToolchainInfo]),
+        "compiler_flags": attrs.list(attrs.string(), default = []),
+        "deps": attrs.list(attrs.dep()),
+        "enable_profiling": attrs.default_only(attrs.bool(default = False)),
+        "external_tools": attrs.list(attrs.dep(), default = []),
+        "link_group_map": LINK_GROUP_MAP_ATTR,
+        "linker_flags": attrs.list(attrs.string(), default = []),
+        "platform_deps": attrs.list(attrs.dep(), default = []),
+        "srcs": attrs.list(attrs.source()),
+        "srcs_deps": attrs.dict(attrs.string(), attrs.dep(), default = {}),
+        "srcs_envs": attrs.dict(attrs.string(), attrs.string(), default = {}),
+        "template_deps": attrs.list(attrs.dep(), default = []),
+        # N.B. allow_worker is only treated by the call site of the anon_target
+        "allow_worker": attrs.bool(),
+    }
+    | haskell_common.use_argsfile_at_link_arg()
+    | haskell_common.extra_libraries_arg()
+    | haskell_common.module_prefix_arg()
+    | native_common.link_style(),
+    artifact_promise_mappings = {
+        "worker": lambda x: x[DefaultInfo].default_outputs[0],
+    },
+)
+
+def _persistent_worker_local(ctx: AnalysisContext) -> WorkerInfo | None:
+    if not ctx.attrs.allow_worker:
+        return None
+
+    tc = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    if not tc.use_worker:
+        return None
+
+    args = {
+            "_cxx_toolchain": ctx.attrs._cxx_toolchain,
+            "_generate_target_metadata": ctx.attrs._generate_target_metadata,
+            "_ghc_wrapper": ctx.attrs._ghc_wrapper,
+            "_haskell_toolchain": ctx.attrs._haskell_toolchain,
+            "deps": tc.worker_deps,
+            "link_style": "shared",
+            "name": "prelude//haskell:worker",
+            "srcs": tc.worker_srcs,
+            "compiler_flags": tc.worker_compiler_flags + [
+                "-O2",
+                "-DBUCK",
+            ],
+            "linker_flags": [
+                "-dynamic",
+                "-rtsopts=all",
+                "-with-rtsopts=-K512M -H -I5 -T -N",
+                "-threaded",
+                "-O2",
+            ],
+            "use_argsfile_at_link": False,
+            "allow_worker": False,
+        }
+
+    worker_target = ctx.actions.anon_target(
+        worker,
+        args,
+    )
+    exe = worker_target.artifact("worker")
+    cmd = cmd_args(exe, "--exe", exe)
+    # For now, running the make worker without `--single` or `--spawn` will break horribly
+    if tc.worker_make:
+        cmd.add("--make", "--spawn")
+    elif tc.worker_single:
+        cmd.add("--single")
+    return WorkerInfo(cmd)
+

@@ -44,6 +44,10 @@ HaskellToolchainInfo = provider(
         "use_worker": provider_field(bool, default = False),
         "worker": provider_field(typing.Any, default = None),
         "worker_make": provider_field(bool, default = False),
+        "worker_single": provider_field(bool, default = False),
+        "worker_srcs": provider_field(typing.Any, default = []),
+        "worker_deps": provider_field(typing.Any, default = []),
+        "worker_compiler_flags": provider_field(typing.Any, default = []),
         "ghc_dir": provider_field(typing.Any, default = None),
     },
 )
