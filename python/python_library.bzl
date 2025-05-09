@@ -224,7 +224,6 @@ def py_attr_resources(ctx: AnalysisContext) -> dict[str, ArtifactOutputs]:
     Return the resources provided by this rule, as a map of resource name to
     a tuple of the resource artifact and any "other" outputs exposed by it.
     """
-
     return unpack_artifact_map(_attr_resources(ctx))
 
 def py_resources(
@@ -237,7 +236,7 @@ def py_resources(
     hidden = []
     for name, resource in resources.items():
         for o in resource.nondebug_runtime_files:
-            if type(o) == "artifact" and o.basename == shared_libs_symlink_tree_name(resource.default_output):
+            if isinstance(o, Artifact) and o.basename == shared_libs_symlink_tree_name(resource.default_output):
                 # Package the binary's shared libs next to the binary
                 # (the path is stored in RPATH relative to the binary).
                 d[paths.join(paths.dirname(name), o.basename)] = o
