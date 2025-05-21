@@ -7,7 +7,7 @@ def _persistent_worker_impl(ctx: AnalysisContext) -> list[Provider]:
     worker = ctx.attrs.worker[RunInfo] #haskell_toolchain.worker
     worker_proxy = ctx.attrs.worker_proxy[RunInfo] # haskell_toolchain.worker_proxy
 
-    cmd = cmd_args(worker_proxy, "--exe", worker)
+    cmd = cmd_args(worker_proxy, "--exe", worker, "--make")
     return [DefaultInfo(), WorkerInfo(cmd)]
 
 persistent_worker = rule(
