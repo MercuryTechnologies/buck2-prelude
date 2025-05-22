@@ -78,7 +78,6 @@ load(
 load(
     "@prelude//haskell:toolchain.bzl",
     "HaskellToolchainInfo",
-    "HaskellToolchainLibrary",
     "HaskellPackageDbTSet",
     "DynamicHaskellPackageDbInfo",
 )
@@ -88,7 +87,6 @@ load(
     "attr_deps_haskell_link_infos_sans_template_deps",
     "attr_deps_haskell_lib_infos",
     "attr_deps_haskell_link_infos",
-    "attr_deps_haskell_toolchain_libraries",
     "attr_deps_merged_link_infos",
     "attr_deps_profiling_link_infos",
     "attr_deps_shared_library_infos",
@@ -173,11 +171,6 @@ def _attr_preferred_linkage(ctx: AnalysisContext) -> Linkage:
         preferred_linkage = "static"
 
     return Linkage(preferred_linkage)
-
-# --
-
-def haskell_toolchain_library_impl(ctx: AnalysisContext):
-    return [DefaultInfo(), HaskellToolchainLibrary(name = ctx.attrs.name)]
 
 # --
 
@@ -664,7 +657,7 @@ def _build_haskell_lib(
     # only gather direct dependencies
     uniq_infos = [x[link_style].value for x in linfos]
 
-    toolchain_libs = [dep.name for dep in attr_deps_haskell_toolchain_libraries(ctx)]
+    toolchain_libs = ctx.attrs.toolchain_libs
 
     if link_style == LinkStyle("shared"):
         lib = ctx.actions.declare_output(lib_short_path)
@@ -1158,6 +1151,7 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
     packages_info = get_packages_info2(
         actions,
         deps = arg.deps,
+        direct_toolchain_libs = arg.toolchain_libs,
         direct_deps_link_info = arg.direct_deps_link_info,
         haskell_toolchain = arg.haskell_toolchain,
         haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
@@ -1231,7 +1225,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
-    toolchain_libs = [dep[HaskellToolchainLibrary].name for dep in ctx.attrs.deps if HaskellToolchainLibrary in dep]
+    toolchain_libs = ctx.attrs.toolchain_libs
 
     output = ctx.actions.declare_output(ctx.label.name)
     link = cmd_args(haskell_toolchain.compiler)

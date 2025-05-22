@@ -11,10 +11,6 @@ load(
     "CxxPlatformInfo",
 )
 load(
-    "@prelude//haskell:toolchain.bzl",
-    "HaskellToolchainLibrary",
-)
-load(
     "@prelude//haskell:library_info.bzl",
     "HaskellLibraryInfo",
     "HaskellLibraryProvider",
@@ -85,15 +81,6 @@ def attr_deps_haskell_link_infos(ctx: AnalysisContext) -> list[HaskellLinkInfo]:
             for d in attr_deps(ctx) + ctx.attrs.template_deps
         ],
     ))
-
-def attr_deps_haskell_toolchain_libraries(ctx: AnalysisContext) -> list[HaskellToolchainLibrary]:
-    return filter(
-        None,
-        [
-            d.get(HaskellToolchainLibrary)
-            for d in attr_deps(ctx) + ctx.attrs.template_deps
-        ],
-    )
 
 # DONT CALL THIS FUNCTION, you want attr_deps_haskell_link_infos instead
 def attr_deps_haskell_link_infos_sans_template_deps(ctx: AnalysisContext) -> list[HaskellLinkInfo]:

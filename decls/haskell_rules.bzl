@@ -52,6 +52,7 @@ haskell_binary = prelude_rule(
         haskell_common.extra_libraries_arg () |
         haskell_common.compiler_flags_arg() |
         haskell_common.deps_arg() |
+        haskell_common.toolchain_libs_arg() |
         haskell_common.scripts_arg() |
         haskell_common.module_prefix_arg() |
         buck.platform_deps_arg() |
@@ -176,6 +177,7 @@ haskell_library = prelude_rule(
         haskell_common.extra_libraries_arg() |
         haskell_common.compiler_flags_arg() |
         haskell_common.deps_arg() |
+        haskell_common.toolchain_libs_arg() |
         haskell_common.scripts_arg() |
         haskell_common.module_prefix_arg() |
         buck.platform_deps_arg() |
@@ -197,16 +199,6 @@ haskell_library = prelude_rule(
         }
     ),
 )
-
-haskell_toolchain_library = prelude_rule(
-    name = "haskell_toolchain_library",
-    docs  = """
-       Declare a library available as part of the GHC toolchain.
-    """,
-    attrs = {
-    },
-)
-
 
 haskell_prebuilt_library = prelude_rule(
     name = "haskell_prebuilt_library",
@@ -281,5 +273,4 @@ haskell_rules = struct(
     haskell_ide = haskell_ide,
     haskell_library = haskell_library,
     haskell_prebuilt_library = haskell_prebuilt_library,
-    haskell_toolchain_library = haskell_toolchain_library,
 )

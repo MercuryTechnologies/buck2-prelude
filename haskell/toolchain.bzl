@@ -50,12 +50,6 @@ HaskellToolchainInfo = provider(
     },
 )
 
-HaskellToolchainLibrary = provider(
-    fields = {
-        "name": provider_field(str),
-    },
-)
-
 HaskellPackagesInfo = record(
     dynamic = DynamicValue,
 )

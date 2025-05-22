@@ -29,6 +29,13 @@ def _deps_arg():
         """),
     }
 
+def _toolchain_libs_arg():
+    return {
+        "toolchain_libs": attrs.set(attrs.string(), default = [], doc = """
+     The set of packages provided by the Haskell toolchain which this rules modules depend on.
+"""),
+    }
+
 def _compiler_flags_arg():
     return {
         "compiler_flags": attrs.list(attrs.arg(), default = [], doc = """
@@ -94,6 +101,7 @@ def _extra_libraries_arg():
 haskell_common = struct(
     srcs_arg = _srcs_arg,
     deps_arg = _deps_arg,
+    toolchain_libs_arg = _toolchain_libs_arg,
     compiler_flags_arg = _compiler_flags_arg,
     exported_linker_flags_arg = _exported_linker_flags_arg,
     scripts_arg = _scripts_arg,
