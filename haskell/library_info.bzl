@@ -6,6 +6,8 @@
 # of this source tree. You may select, at your option, one of the
 # above-listed licenses.
 
+load("@prelude//utils:utils.bzl", "flatten", "dedupe_by_value")
+
 # If the target is a haskell library, the HaskellLibraryProvider
 # contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
 # which contains the HaskellLibraryInfo for all the transitive
@@ -24,10 +26,18 @@ HaskellLibraryInfo = record(
     name = str,
     # package config database: e.g. platform009/build/ghc/lib/package.conf.d
     db = Artifact,
+    # package config database, referring to the empty lib which is only used for compilation
+    empty_db = Artifact | None,
+    # package config database, used for ghc -M
+    deps_db = Artifact | None,
     # e.g. "base-4.13.0.0"
     id = str,
+    # dynamic dependency information
+    dynamic = None | dict[bool, DynamicValue],
     # Import dirs indexed by profiling enabled/disabled
-    import_dirs = dict[bool, Artifact],
+    import_dirs = dict[bool, list[Artifact]],
+    # Object files indexed by profiling enabled/disabled
+    objects = dict[bool, list[Artifact]],
     stub_dirs = list[Artifact],
 
     # This field is only used as hidden inputs to compilation, to
@@ -41,6 +51,32 @@ HaskellLibraryInfo = record(
     version = str,
     is_prebuilt = bool,
     profiling_enabled = bool,
+    # Package dependencies
+    dependencies = list[str],
 )
 
-HaskellLibraryInfoTSet = transitive_set()
+def _project_as_package_db(lib: HaskellLibraryInfo):
+  return cmd_args(lib.db)
+
+def _project_as_empty_package_db(lib: HaskellLibraryInfo):
+  return cmd_args(lib.empty_db)
+
+def _project_as_deps_package_db(lib: HaskellLibraryInfo):
+  return cmd_args(lib.deps_db)
+
+def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None):
+    flatted = flatten(children)
+    if lib:
+        flatted.extend(lib.dependencies)
+    return dedupe_by_value(flatted)
+
+HaskellLibraryInfoTSet = transitive_set(
+    args_projections = {
+        "package_db": _project_as_package_db,
+        "empty_package_db": _project_as_empty_package_db,
+        "deps_package_db": _project_as_deps_package_db,
+    },
+    reductions = {
+        "packages": _get_package_deps,
+    },
+)

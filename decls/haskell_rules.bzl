@@ -47,8 +47,14 @@ haskell_binary = prelude_rule(
         native_common.link_group_public_deps_label() |
         native_common.link_style() |
         haskell_common.srcs_arg() |
+        haskell_common.external_tools_arg() |
+        haskell_common.srcs_envs_arg () |
+        haskell_common.use_argsfile_at_link_arg () |
+        haskell_common.extra_libraries_arg () |
         haskell_common.compiler_flags_arg() |
         haskell_common.deps_arg() |
+        haskell_common.scripts_arg() |
+        haskell_common.module_prefix_arg() |
         buck.platform_deps_arg() |
         {
             "contacts": attrs.list(attrs.string(), default = []),
@@ -63,6 +69,7 @@ haskell_binary = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
+            "allow_worker": attrs.bool(default = True),
         }
     ),
 )
@@ -164,8 +171,14 @@ haskell_library = prelude_rule(
     attrs = (
         # @unsorted-dict-items
         haskell_common.srcs_arg() |
+        haskell_common.external_tools_arg() |
+        haskell_common.srcs_envs_arg() |
+        haskell_common.use_argsfile_at_link_arg() |
+        haskell_common.extra_libraries_arg() |
         haskell_common.compiler_flags_arg() |
         haskell_common.deps_arg() |
+        haskell_common.scripts_arg() |
+        haskell_common.module_prefix_arg() |
         buck.platform_deps_arg() |
         native_common.link_whole(link_whole_type = attrs.bool(default = False)) |
         native_common.preferred_linkage(preferred_linkage_type = attrs.enum(Linkage.values())) |
@@ -181,9 +194,20 @@ haskell_library = prelude_rule(
             "linker_flags": attrs.list(attrs.arg(), default = []),
             "platform": attrs.option(attrs.string(), default = None),
             "platform_linker_flags": attrs.list(attrs.tuple(attrs.regex(), attrs.list(attrs.arg())), default = []),
+            "allow_worker": attrs.bool(default = True),
         }
     ),
 )
+
+haskell_toolchain_library = prelude_rule(
+    name = "haskell_toolchain_library",
+    docs  = """
+       Declare a library available as part of the GHC toolchain.
+    """,
+    attrs = {
+    },
+)
+
 
 haskell_prebuilt_library = prelude_rule(
     name = "haskell_prebuilt_library",
@@ -258,4 +282,5 @@ haskell_rules = struct(
     haskell_ide = haskell_ide,
     haskell_library = haskell_library,
     haskell_prebuilt_library = haskell_prebuilt_library,
+    haskell_toolchain_library = haskell_toolchain_library,
 )
