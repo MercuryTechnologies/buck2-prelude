@@ -208,12 +208,31 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     ))
 
     md_args.add("--ghc", arg.haskell_toolchain.compiler)
-    md_args.add(cmd_args(ghc_args, format="--ghc-arg={}"))
+
+    md_args.add(
+        "--ghc-arg-file",
+        argfile(
+            actions = actions,
+            name = "haskell_metadata_ghc_arg.argsfile",
+            args = ghc_args,
+            allow_args = True,
+        ),
+    )
+
     md_args.add(
         "--source-prefix",
         arg.strip_prefix,
     )
-    md_args.add(cmd_args(arg.sources, format="--source={}"))
+
+    md_args.add(
+        "--source-file",
+        argfile(
+            actions = actions,
+            name = "haskell_metadata_source.argsfile",
+            args = arg.sources,
+            allow_args = True,
+        )
+    )
 
     md_args.add(
         arg.lib_package_name_and_prefix,
