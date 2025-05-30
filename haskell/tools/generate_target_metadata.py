@@ -52,16 +52,26 @@ def main():
         action="append",
         help="GHC compiler argument to forward to `ghc -M`, including package flags.")
     parser.add_argument(
+        "--ghc-arg-file",
+        required=False,
+        type=Path,
+        help="GHC argument list as a file to forward to `ghc -M`, including package flags.")
+    parser.add_argument(
         "--source-prefix",
         required=True,
         type=str,
         help="The path prefix to strip of module sources to extract module names.")
     parser.add_argument(
         "--source",
-        required=True,
+        required=False,
         type=str,
         action="append",
         help="Haskell module source files of the current package.")
+    parser.add_argument(
+        "--source-file",
+        required=False,
+        type=Path,
+        help="Source file list as a file to forward to `ghc -M`")
     parser.add_argument(
         "--package",
         required=False,
@@ -104,7 +114,7 @@ def json_default_handler(o):
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
-        ghc_depends = run_ghc_depends(args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
+        ghc_depends = run_ghc_depends(args.ghc, args.ghc_arg, args.ghc_arg_file, args.source, args.source_file, aux_paths, args.worker_target_id)
     else:
         ghc_depends = load_toolchain_packages(args.build_plan)
     th_modules = determine_th_modules(ghc_depends)
@@ -205,12 +215,46 @@ def determine_package_deps(ghc_depends):
     return package_deps
 
 
-def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
+def get_args_from_file(file):
+    with open(file, "r") as f:
+        ls = f.readlines()
+        ls2 = []
+        for l in ls:
+            ls2.append(l.strip())
+        return ls2
+
+def write_argfile_from_list(file, list):
+    with open(file, "w") as f:
+        for a in list:
+            f.write("{}\n".format(a))
+
+def run_ghc_depends(ghc, ghc_args, ghc_arg_file, sources, source_file, aux_paths, worker_target_id):
     with tempfile.TemporaryDirectory() as dname:
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
-        haskell_sources = list(filter(is_haskell_src, sources))
-        haskell_boot_sources = list(filter (is_haskell_boot, sources))
+        ghc_args_all = []
+        if ghc_args:
+            ghc_args_all = ghc_args
+        if ghc_arg_file:
+            ghc_args_all.extend(get_args_from_file(ghc_arg_file))
+
+        ghc_args_all_fname = os.path.join(dname, "haskell_metadata_ghc_args_all.argfile")
+        write_argfile_from_list(ghc_args_all_fname, ghc_args_all)
+
+        sources_all = []
+        if sources:
+            sources_all = sources
+        if source_file:
+            sources_all.extend(get_args_from_file(source_file))
+
+        haskell_sources = list(filter(is_haskell_src, sources_all))
+        haskell_boot_sources = list(filter (is_haskell_boot, sources_all))
+
+        haskell_sources_all = haskell_sources + haskell_boot_sources
+
+        haskell_sources_all_fname = os.path.join(dname, "haskell_metadata_haskell_sources_all.argfile")
+        write_argfile_from_list(haskell_sources_all_fname, haskell_sources_all)
+
         if worker_target_id:
             worker_args = ["--worker-target-id={}".format(worker_target_id)]
         else:
@@ -222,7 +266,9 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
             "-outputdir", ".",
             "-dep-json", json_fname,
             "-dep-makefile", make_fname,
-        ] + worker_args + ghc_args + haskell_sources + haskell_boot_sources
+        ] + worker_args + ["@" + ghc_args_all_fname, "@" + haskell_sources_all_fname]
+        #+ ghc_args_all
+        #+ haskell_sources + haskell_boot_sources
 
         env = os.environ.copy()
         path = env.get("PATH", "")
