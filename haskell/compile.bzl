@@ -629,10 +629,10 @@ def _common_compile_module_args(
         "env",
     ]))
     package_env = cmd_args(delimiter = "\n")
-    package_env.add(cmd_args(
-        packagedb_args,
-        format = "package-db {}",
-    ).relative_to(package_env_file, parent = 1))
+    # package_env.add(cmd_args(
+    #     packagedb_args,
+    #     format = "package-db {}",
+    # ).relative_to(package_env_file, parent = 1))
     actions.write(
         package_env_file,
         package_env,
@@ -640,7 +640,7 @@ def _common_compile_module_args(
     package_env_args = cmd_args(
         package_env_file,
         prepend = "-package-env",
-        hidden = packagedb_args,
+        # hidden = packagedb_args,
     )
 
     return CommonCompileModuleArgs(
