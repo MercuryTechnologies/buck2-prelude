@@ -842,14 +842,17 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     indexing_tsets = {}
     sub_targets = {}
 
-    libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
-
-    # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
-    if libprefix[-1] == '_':
-        libname = libprefix + ctx.label.name
+    if(ctx.attrs.use_same_package_name):
+        libname = ctx.label.name
+        pkgname = libname
     else:
-        libname = libprefix + "_" + ctx.label.name
-    pkgname = libname.replace("_", "-")
+        libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
+        # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
+        if libprefix[-1] == '_':
+            libname = libprefix + ctx.label.name
+        else:
+            libname = libprefix + "_" + ctx.label.name
+        pkgname = libname.replace("_", "-")
 
     md_file = target_metadata(
         ctx,
