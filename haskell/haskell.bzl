@@ -245,7 +245,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             name = ctx.attrs.name,
             db = ctx.attrs.db,
             empty_db = None,
-            deps_db = None,
+            # deps_db = None,
             objects = {},
             dependencies = [],
             import_dirs = {},
@@ -261,7 +261,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             name = ctx.attrs.name,
             db = ctx.attrs.db,
             empty_db = None,
-            deps_db = None,
+            # deps_db = None,
             objects = {},
             dependencies = [],
             import_dirs = {},
@@ -449,10 +449,10 @@ def _make_package(
             suffix = paths.join(suffix, subdir)
         return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
 
-    if for_deps:
+    if False:
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + "_deps.conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix + "_deps", dir = True)
-    elif use_empty_lib:
+    elif not for_deps and use_empty_lib:
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + "_empty.conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix + "_empty", dir = True)
     else:
@@ -474,7 +474,7 @@ def _make_package(
         # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
         #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
         #     for each exposed module
-        import_dirs = ["."] if for_deps else [
+        import_dirs = [
             mk_artifact_dir("mod", profiled, src_prefix) for profiled in profiling for src_prefix in source_prefixes
         ]
 
@@ -808,25 +808,25 @@ def _build_haskell_lib(
         use_empty_lib = True,
         md_file = md_file,
     )
-    deps_db = _make_package(
-        ctx,
-        link_style,
-        pkgname,
-        None,
-        uniq_infos,
-        import_artifacts.keys(),
-        enable_profiling = enable_profiling,
-        use_empty_lib = True,
-        md_file = md_file,
-        for_deps = True,
-    )
+    # deps_db = _make_package(
+    #     ctx,
+    #     link_style,
+    #     pkgname,
+    #     None,
+    #     uniq_infos,
+    #     import_artifacts.keys(),
+    #     enable_profiling = enable_profiling,
+    #     use_empty_lib = True,
+    #     md_file = md_file,
+    #     for_deps = True,
+    # )
 
 
     hlib = HaskellLibraryInfo(
         name = pkgname,
         db = db,
         empty_db = empty_db,
-        deps_db = deps_db,
+        # deps_db = deps_db,
         id = pkgname,
         dynamic = dynamic,  # TODO(ah) refine with dynamic projections
         import_dirs = import_artifacts,

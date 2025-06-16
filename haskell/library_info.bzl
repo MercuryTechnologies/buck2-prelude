@@ -28,7 +28,7 @@ HaskellLibraryInfo = record(
     # package config database, referring to the empty lib which is only used for compilation
     empty_db = Artifact | None,
     # package config database, used for ghc -M
-    deps_db = Artifact | None,
+    # deps_db = Artifact | None,
     # e.g. "base-4.13.0.0"
     id = str,
     # dynamic dependency information
@@ -60,8 +60,8 @@ def _project_as_package_db(lib: HaskellLibraryInfo):
 def _project_as_empty_package_db(lib: HaskellLibraryInfo):
   return cmd_args(lib.empty_db)
 
-def _project_as_deps_package_db(lib: HaskellLibraryInfo):
-  return cmd_args(lib.deps_db)
+# def _project_as_deps_package_db(lib: HaskellLibraryInfo):
+#   return cmd_args(lib.deps_db)
 
 def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None):
     flatted = flatten(children)
@@ -73,7 +73,7 @@ HaskellLibraryInfoTSet = transitive_set(
     args_projections = {
         "package_db": _project_as_package_db,
         "empty_package_db": _project_as_empty_package_db,
-        "deps_package_db": _project_as_deps_package_db,
+        # "deps_package_db": _project_as_deps_package_db,
     },
     reductions = {
         "packages": _get_package_deps,
