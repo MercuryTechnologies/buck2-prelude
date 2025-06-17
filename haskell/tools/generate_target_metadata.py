@@ -32,6 +32,12 @@ def main():
         description=__doc__,
         fromfile_prefix_chars="@")
     parser.add_argument(
+        "--cwd",
+        required=False,
+        type=Path,
+        help="Path to ghc's working directory."
+    )
+    parser.add_argument(
         "--output",
         required=True,
         type=argparse.FileType("w"),
@@ -44,7 +50,7 @@ def main():
     parser.add_argument(
         "--ghc",
         required=True,
-        type=str,
+        type=Path,
         help="Path to the Haskell compiler GHC.")
     parser.add_argument(
         "--ghc-arg",
@@ -110,7 +116,7 @@ def json_default_handler(o):
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
-        ghc_depends = run_ghc_depends(args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
+        ghc_depends = run_ghc_depends(args.cwd, args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
     else:
         ghc_depends = load_toolchain_packages(args.build_plan)
     exposed_modules = determine_exposed_modules(ghc_depends)
@@ -223,7 +229,7 @@ def determine_package_deps(ghc_depends):
     return package_deps
 
 
-def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
+def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
     with tempfile.TemporaryDirectory() as dname:
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
@@ -249,13 +255,13 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
                 args_file.write(arg)
                 args_file.write("\n")
 
-        args_outer = [ghc, "@" + args_fname]
+        args_outer = [str(ghc.absolute()), "@" + args_fname]
 
         env = os.environ.copy()
         path = env.get("PATH", "")
         env["PATH"] = os.pathsep.join([path] + aux_paths)
 
-        res = subprocess.run(args_outer, env=env, capture_output=True)
+        res = subprocess.run(args_outer, env=env, cwd=cwd, capture_output=True)
         if res.returncode != 0:
             # Write the GHC command on failure.
             print(ghc, shlex.join(args), file=sys.stderr)
