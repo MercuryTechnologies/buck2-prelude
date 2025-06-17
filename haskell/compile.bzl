@@ -192,7 +192,10 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
-    ghc_args = cmd_args()
+
+    # ghc args should be relative to the cell root, since this will be
+    # the working directory of ghc
+    ghc_args = cmd_args(format = "--ghc-arg={}", relative_to = arg.cell_root)
     ghc_args.add("-j")
     ghc_args.add("-hide-all-packages")
 
@@ -201,24 +204,24 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
     ghc_args.add(arg.compiler_flags)
 
-    md_args = cmd_args(arg.md_gen)
-    md_args.add(cmd_args(
-        arg.external_tool_paths,
-        format="--bin-exe={}",
-    ))
-
-    md_args.add("--ghc", arg.haskell_toolchain.compiler)
-    md_args.add(cmd_args(ghc_args, format="--ghc-arg={}"))
-    md_args.add(
+    # sources args also need to be relative to the cell root
+    sources_args = cmd_args(arg.sources, format = "--source={}", relative_to = arg.cell_root)
+    md_args = cmd_args(
+        "--ghc",
+        arg.haskell_toolchain.compiler,
+        ghc_args,
         "--source-prefix",
         arg.strip_prefix,
-    )
-    md_args.add(cmd_args(arg.sources, format="--source={}"))
-
-    md_args.add(
+        sources_args,
         arg.lib_package_name_and_prefix,
+        "--output",
+        output,
+        cmd_args(
+            arg.external_tool_paths,
+            format = "--bin-exe={}",
+            relative_to = arg.cell_root,
+        ),
     )
-    md_args.add("--output", output)
 
     haskell_toolchain = arg.haskell_toolchain
     if arg.allow_worker and haskell_toolchain.use_worker and arg.haskell_toolchain.worker_make:
@@ -263,8 +266,10 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             weight = 8,
         )
     else:
+        # pass the cell root directory as the working directory for ghc
+        md_cmd = cmd_args(arg.md_gen, "--cwd", arg.cell_root, md_args)
         actions.run(
-            md_args,
+            md_cmd,
             category = "haskell_metadata",
             identifier = arg.suffix if arg.suffix else None,
             weight = 8,
@@ -331,6 +336,8 @@ def target_metadata(
             sources = sources,
             external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
             strip_prefix = _strip_prefix(str(ctx.label.cell_root), str(ctx.label.path)),
+            # ghc should be run with the cell root as working directory
+            cell_root = ctx.label.cell_root,
             suffix = suffix,
             toolchain_libs = toolchain_libs,
             worker = worker,
