@@ -30,6 +30,12 @@ def main():
         help="Path to the dep file.",
     )
     parser.add_argument(
+        "--iface",
+        required=True,
+        type=Path,
+        help="The path the interface file should be written to.",
+    )
+    parser.add_argument(
         "--buck2-package-db",
         required=False,
         nargs="*",
@@ -84,6 +90,9 @@ def main():
     )
 
     args, ghc_args = parser.parse_known_args()
+
+    ghc_args.append(f"-ohi={args.iface}")
+
     if args.worker_target_id:
         worker_args = ["--worker-target-id={}".format(args.worker_target_id)] + (["--worker-close"] if args.worker_close else [])
         use_persistent_workers = True
@@ -113,7 +122,7 @@ def main():
     if returncode != 0:
         return returncode
 
-    recompute_abi_hash(args.ghc, args.abi_out, use_persistent_workers)
+    recompute_abi_hash(args.ghc, args.iface, args.abi_out, use_persistent_workers)
 
     # write an empty dep file, to signal that all tagged files are unused
     try:
@@ -141,9 +150,8 @@ def main():
     return 0
 
 
-def recompute_abi_hash(ghc, abi_out, use_persistent_workers):
+def recompute_abi_hash(ghc, hi_file, abi_out, use_persistent_workers):
     """Call ghc on the hi file and write the ABI hash to abi_out."""
-    hi_file = abi_out.with_suffix("")
     if use_persistent_workers:
         worker_args = ["--worker-target-id=show-iface-abi-hash"]
     else:

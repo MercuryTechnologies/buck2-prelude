@@ -97,7 +97,6 @@ CompileResultInfo = record(
     objects = field(list[Artifact]),
     hi = field(list[Artifact]),
     stubs = field(Artifact),
-    hashes = field(list[Artifact]),
     producing_indices = field(bool),
     module_tsets = field(DynamicValue),
 )
@@ -111,7 +110,6 @@ PackagesInfo = record(
 _Module = record(
     source = field(Artifact),
     interfaces = field(list[Artifact]),
-    hash = field(Artifact),
     objects = field(list[Artifact]),
     stub_dir = field(Artifact | None),
     prefix_dir = field(str),
@@ -146,7 +144,6 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
-        hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
 
         if link_style in [LinkStyle("static"), LinkStyle("static_pic")]:
             dyn_osuf, dyn_hisuf = output_extensions(LinkStyle("shared"), enable_profiling)
@@ -167,7 +164,6 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         modules[module_name] = _Module(
             source = src,
             interfaces = interfaces,
-            hash = hash,
             objects = objects,
             stub_dir = stub_dir,
             prefix_dir = prefix_dir)
@@ -681,7 +677,7 @@ def _compile_module(
     his = [outputs[hi] for hi in module.interfaces]
 
     compile_args_for_file.add("-o", objects[0])
-    compile_args_for_file.add("-ohi", his[0])
+    compile_args_for_file.add("--iface", his[0])
 
     # Set the output directories. We do not use the -outputdir flag, but set the directories individually.
     # Note, the -outputdir option is shorthand for the combination of -odir, -hidir, -hiedir, -stubdir and -dumpdir.
@@ -799,7 +795,9 @@ def _compile_module(
     tagged_dep_file = abi_tag.tag_artifacts(dep_file)
 
     compile_cmd.add("--buck2-dep", tagged_dep_file)
-    compile_cmd.add("--abi-out", outputs[module.hash])
+
+    hash = actions.declare_output(module_name + ".hash")
+    compile_cmd.add("--abi-out", hash.as_output())
 
     worker_args = dict() if worker == None else dict(exe = WorkerRunInfo(worker = worker))
 
@@ -817,7 +815,7 @@ def _compile_module(
     module_tset = actions.tset(
         CompiledModuleTSet,
         value = CompiledModuleInfo(
-            abi = module.hash,
+            abi = hash,
             interfaces = module.interfaces,
             db_deps = exposed_package_dbs,
         ),
@@ -921,7 +919,6 @@ def compile(
         for module in modules.values()
         if module.stub_dir != None
     ]
-    abi_hashes = [module.hash for module in modules.values()]
 
     # Collect library dependencies. Note that these don't need to be in a
     # particular order.
@@ -937,7 +934,7 @@ def compile(
     dyn_module_tsets = ctx.actions.dynamic_output_new(_dynamic_do_compile(
         md_file = md_file,
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
-        outputs = {o: o.as_output() for o in interfaces + objects + stub_dirs + abi_hashes},
+        outputs = {o: o.as_output() for o in interfaces + objects + stub_dirs},
         direct_deps_by_name = {
             info.value.name: (info.value.empty_db, info.value.dynamic[enable_profiling])
             for info in direct_deps_info
@@ -1011,7 +1008,6 @@ def compile(
     return CompileResultInfo(
         objects = objects,
         hi = interfaces,
-        hashes = abi_hashes,
         stubs = stubs_dir,
         producing_indices = False,
         module_tsets = dyn_module_tsets,
