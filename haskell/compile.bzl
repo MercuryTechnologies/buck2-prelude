@@ -54,11 +54,13 @@ load("@prelude//utils:graph_utils.bzl", "post_order_traversal")
 load("@prelude//utils:strings.bzl", "strip_prefix")
 
 CompiledModuleInfo = provider(fields = {
+    "name": provider_field(str),
     "abi": provider_field(Artifact | None),
     "interfaces": provider_field(list[Artifact]),
     "hie_files": provider_field(list[Artifact]),
     # TODO[AH] track this module's package-name/id & package-db instead.
     "db_deps": provider_field(list[Artifact]),
+    "package": provider_field(str),
 })
 
 def _compiled_module_project_as_abi(mod: CompiledModuleInfo) -> cmd_args:
@@ -81,6 +83,11 @@ def _compiled_module_reduce_as_packagedb_deps(children: list[dict[Artifact, None
         result.update(child)
     return result
 
+# Used by the persistent worker in the compile action to restore the target module's transitive dependencies from cache
+# into the home package tables of the respective units.
+def _compiled_module_json_as_dep_modules(mod: CompiledModuleInfo) -> struct:
+    return struct(name = mod.name, package = mod.package, interfaces = mod.interfaces)
+
 CompiledModuleTSet = transitive_set(
     args_projections = {
         "abi": _compiled_module_project_as_abi,
@@ -89,6 +96,9 @@ CompiledModuleTSet = transitive_set(
     },
     reductions = {
         "packagedb_deps": _compiled_module_reduce_as_packagedb_deps,
+    },
+    json_projections = {
+        "dep_modules": _compiled_module_json_as_dep_modules,
     },
 )
 
@@ -120,6 +130,7 @@ PackagesInfo = record(
 )
 
 _Module = record(
+    name = field(str),
     source = field(Artifact),
     interfaces = field(list[Artifact]),
     hash = field(Artifact | None),
@@ -199,6 +210,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         prefix_dir = "mod-" + suffix
 
         modules[module_name] = _Module(
+            name = module_name,
             source = src,
             interfaces = interfaces,
             hash = hash,
@@ -209,6 +221,15 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         )
 
     return modules
+
+# Collect the unit flags and build plans of the transitive closure of the current unit's dependencies.
+# Used by the persistent worker in the metadata step to restore all required home unit envs and module graphs from
+# cache.
+def transitive_metadata(actions: AnalysisActions, pkgname: str, packages_info: PackagesInfo) -> cmd_args:
+    dep_units_file = actions.declare_output("dep-units-{}.json".format(pkgname))
+    dep_units = packages_info.transitive_deps.project_as_json("dep_units", ordering = "postorder")
+    actions.write_json(dep_units_file, dep_units, with_inputs = True, pretty = True)
+    return cmd_args(dep_units_file, prepend = "--dep-units")
 
 def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
     # Add -package-db and -package/-expose-package flags for each Haskell
@@ -290,6 +311,8 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             arg.external_tool_paths,
             format = "--bin-exe={}",
         ))
+        bp_args.add(transitive_metadata(actions, arg.pkgname, packages_info))
+        bp_args.add("--unit", unit.name)
         bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
 
         actions.run(
@@ -299,6 +322,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             exe = WorkerRunInfo(worker = arg.worker),
         )
         md_args.add("--build-plan", build_plan)
+        md_args.add("--unit-args", ghc_args_file)
 
     md_args_outer = cmd_args(arg.md_gen)
     md_args_outer.add(at_argfile(
@@ -503,6 +527,7 @@ def get_packages_info(
     )
 
 CommonCompileModuleArgs = record(
+    pkgname = field(str),
     command = field(cmd_args),
     args_for_file = field(cmd_args),
     package_env_args = field(cmd_args),
@@ -678,6 +703,7 @@ def _common_compile_module_args(
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
     return CommonCompileModuleArgs(
+        pkgname = pkgname,
         command = command,
         args_for_file = args_for_file,
         package_env_args = package_env_args,
@@ -854,6 +880,17 @@ def _compile_module(
     compile_cmd.add("--buck2-dep", tagged_dep_file)
     compile_cmd.add("--abi-out", outputs[module.hash])
 
+    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+        # Provide all module dependencies to the worker for state restoration from cache, separating modules in the
+        # current unit from those in other packages of the project.
+        dep_modules = dict(
+            home_unit = [dep.value for dep in this_package_modules],
+            project = cross_package_modules.project_as_json("dep_modules", ordering = "postorder"),
+        )
+        dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
+        actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
+        compile_cmd.add("--dep-modules", dep_modules_file)
+
     if worker == None:
         worker_args = dict()
     elif allow_worker and haskell_toolchain.use_worker:
@@ -877,6 +914,8 @@ def _compile_module(
     module_tset = actions.tset(
         CompiledModuleTSet,
         value = CompiledModuleInfo(
+            package = common_args.pkgname,
+            name = module.name,
             abi = module.hash,
             interfaces = module.interfaces,
             hie_files = module.hie_files,
@@ -1059,6 +1098,8 @@ def _make_module_tsets_non_incr(
         package_deps: dict[str, list[str]],
         toolchain_deps_by_name: dict[str, None],
         direct_deps_by_name: dict[str, typing.Any],
+        name,
+        pkgname,
         ) -> CompiledModuleTSet:
 
     toolchain_deps = []
@@ -1087,6 +1128,8 @@ def _make_module_tsets_non_incr(
     module_tsets = actions.tset(
         CompiledModuleTSet,
         value = CompiledModuleInfo(
+            name = name,
+            package = pkgname,
             abi = module.hash,
             interfaces = module.interfaces,
             hie_files = module.hie_files,
@@ -1163,6 +1206,8 @@ def _compile_non_incr(
             package_deps = package_deps.get(module_name, {}),
             toolchain_deps_by_name = arg.toolchain_deps_by_name,
             direct_deps_by_name = direct_deps_by_name,
+            name = module_name,
+            pkgname = arg.pkgname,
         )
         for deps in module_tsets[module_name].children:
             compile_cmd_hidden.append(deps.project_as_args("interfaces"))
