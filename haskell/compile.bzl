@@ -54,11 +54,13 @@ load("@prelude//utils:graph_utils.bzl", "post_order_traversal")
 load("@prelude//utils:strings.bzl", "strip_prefix")
 
 CompiledModuleInfo = provider(fields = {
+    "name": provider_field(str),
     "abi": provider_field(Artifact | None),
     "interfaces": provider_field(list[Artifact]),
     "hie_files": provider_field(list[Artifact]),
     # TODO[AH] track this module's package-name/id & package-db instead.
     "db_deps": provider_field(list[Artifact]),
+    "package": provider_field(str),
 })
 
 def _compiled_module_project_as_abi(mod: CompiledModuleInfo) -> cmd_args:
@@ -81,6 +83,9 @@ def _compiled_module_reduce_as_packagedb_deps(children: list[dict[Artifact, None
         result.update(child)
     return result
 
+def _compiled_module_json_as_dep_graph(mod: CompiledModuleInfo) -> struct:
+    return struct(name = mod.name, package = mod.package, interfaces = mod.interfaces)
+
 CompiledModuleTSet = transitive_set(
     args_projections = {
         "abi": _compiled_module_project_as_abi,
@@ -89,6 +94,9 @@ CompiledModuleTSet = transitive_set(
     },
     reductions = {
         "packagedb_deps": _compiled_module_reduce_as_packagedb_deps,
+    },
+    json_projections = {
+        "dep_graph": _compiled_module_json_as_dep_graph,
     },
 )
 
@@ -120,6 +128,7 @@ PackagesInfo = record(
 )
 
 _Module = record(
+    name = field(str),
     source = field(Artifact),
     interfaces = field(list[Artifact]),
     hash = field(Artifact | None),
@@ -199,6 +208,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         prefix_dir = "mod-" + suffix
 
         modules[module_name] = _Module(
+            name = module_name,
             source = src,
             interfaces = interfaces,
             hash = hash,
@@ -209,6 +219,11 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         )
 
     return modules
+
+def transitive_build_plans(actions: AnalysisActions, pkgname: str, packages_info: PackagesInfo) -> cmd_args:
+    build_plans_file = actions.declare_output("dep-units-{}.json".format(pkgname))
+    actions.write_json(build_plans_file, packages_info.transitive_deps.project_as_json("dep_unit"), with_inputs = True, pretty = True)
+    return cmd_args(build_plans_file, prepend = "--dep-units")
 
 def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
     # Add -package-db and -package/-expose-package flags for each Haskell
@@ -297,6 +312,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             arg.external_tool_paths,
             format = "--bin-exe={}",
         ))
+        bp_args.add(transitive_build_plans(actions, arg.pkgname, packages_info))
         bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
 
         actions.run(
@@ -505,6 +521,7 @@ def get_packages_info(
     )
 
 CommonCompileModuleArgs = record(
+    pkgname = field(str),
     command = field(cmd_args),
     args_for_file = field(cmd_args),
     package_env_args = field(cmd_args),
@@ -683,6 +700,7 @@ def _common_compile_module_args(
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
     return CommonCompileModuleArgs(
+        pkgname = pkgname,
         command = command,
         args_for_file = args_for_file,
         package_env_args = package_env_args,
@@ -848,6 +866,7 @@ def _compile_module(
 
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
+        compile_cmd.add("-fpackage-db-byte-code")
 
     compile_cmd.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
 
@@ -857,6 +876,15 @@ def _compile_module(
 
     compile_cmd.add("--buck2-dep", tagged_dep_file)
     compile_cmd.add("--abi-out", outputs[module.hash])
+
+    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+        dep_graph = dict(
+            home_unit = [dep.value for dep in this_package_modules],
+            project = cross_package_modules.project_as_json("dep_graph"),
+        )
+        dep_graph_file = actions.declare_output("dep-graph-{}.json".format(module_name))
+        actions.write_json(dep_graph_file, dep_graph, with_inputs = True, pretty = True)
+        compile_cmd.add("--buck2-dep-graph", dep_graph_file)
 
     if worker == None:
         worker_args = dict()
@@ -881,6 +909,8 @@ def _compile_module(
     module_tset = actions.tset(
         CompiledModuleTSet,
         value = CompiledModuleInfo(
+            package = common_args.pkgname,
+            name = module.name,
             abi = module.hash,
             interfaces = module.interfaces,
             hie_files = module.hie_files,
@@ -1055,10 +1085,14 @@ def compile_args(
     )
 
 def _make_module_tset_non_incr(
-        actions) -> CompiledModuleTSet:
+        actions,
+        name,
+        pkgname) -> CompiledModuleTSet:
     module_tset = actions.tset(
         CompiledModuleTSet,
         value = CompiledModuleInfo(
+            name = name,
+            package = pkgname,
             abi = None,
             interfaces = [],
             hie_files = [],
@@ -1125,7 +1159,7 @@ def _compile_non_incr(
 
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
-        module_tsets[module_name] = _make_module_tset_non_incr(actions)
+        module_tsets[module_name] = _make_module_tset_non_incr(actions, module_name, arg.pkgname)
 
     actions.run(
         compile_cmd,
