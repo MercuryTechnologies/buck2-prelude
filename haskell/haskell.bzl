@@ -256,6 +256,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             version = ctx.attrs.version,
             is_prebuilt = True,
             profiling_enabled = False,
+            md_file = None,
         )
         prof_hlibinfo = HaskellLibraryInfo(
             name = ctx.attrs.name,
@@ -272,6 +273,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             version = ctx.attrs.version,
             is_prebuilt = True,
             profiling_enabled = True,
+            md_file = None,
         )
 
         def archive_linkable(lib):
@@ -837,6 +839,7 @@ def _build_haskell_lib(
         is_prebuilt = False,
         profiling_enabled = enable_profiling,
         dependencies = toolchain_libs,
+        md_file = md_file,
     )
 
     return HaskellLibBuildOutput(

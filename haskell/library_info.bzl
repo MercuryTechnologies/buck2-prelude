@@ -52,6 +52,7 @@ HaskellLibraryInfo = record(
     profiling_enabled = bool,
     # Package dependencies
     dependencies = list[str],
+    md_file = Artifact | None,
 )
 
 def _project_as_package_db(lib: HaskellLibraryInfo):
@@ -69,6 +70,12 @@ def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None)
         flatted.extend(lib.dependencies)
     return dedupe_by_value(flatted)
 
+def _json_as_build_plan(lib: HaskellLibraryInfo) -> struct:
+    return struct(
+        name = lib.name,
+        build_plan = lib.md_file,
+    )
+
 HaskellLibraryInfoTSet = transitive_set(
     args_projections = {
         "package_db": _project_as_package_db,
@@ -77,5 +84,8 @@ HaskellLibraryInfoTSet = transitive_set(
     },
     reductions = {
         "packages": _get_package_deps,
+    },
+    json_projections = {
+        "build_plan": _json_as_build_plan,
     },
 )
