@@ -89,6 +89,11 @@ def main():
         type=str,
         help="Previously obtained build plan",
     )
+    parser.add_argument(
+        "--unit-args",
+        type=str,
+        help="Args used to reconstruct the persistent worker's unit state when recompiling",
+    )
     args = parser.parse_args()
 
     result = obtain_target_metadata(args)
@@ -119,6 +124,10 @@ def obtain_target_metadata(args):
         "module_mapping": module_mapping,
         "module_graph": module_graph,
         "package_deps": package_deps,
+        # The original build plan output and the GHC options used to initialize the home unit env are required by the
+        # persistent worker in order to restore the state from cache.
+        "build_plan": ghc_depends,
+        "unit_args": args.unit_args,
     }
 
 

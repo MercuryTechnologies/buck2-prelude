@@ -54,6 +54,7 @@ HaskellLibraryInfo = record(
     profiling_enabled = bool,
     # Package dependencies
     dependencies = list[str],
+    md_file = Artifact | None,
 )
 
 def _project_as_package_db(lib: HaskellLibraryInfo):
@@ -71,6 +72,14 @@ def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None)
         flatted.extend(lib.dependencies)
     return dedupe_by_value(flatted)
 
+# Used by the persistent worker in the build plan action to restore the target unit's transitive dependencies from cache
+# into the unit env and module graph.
+def _json_as_dep_units(lib: HaskellLibraryInfo) -> struct:
+    return struct(
+        name = lib.name,
+        build_plan = lib.md_file,
+    )
+
 HaskellLibraryInfoTSet = transitive_set(
     args_projections = {
         "package_db": _project_as_package_db,
@@ -79,5 +88,8 @@ HaskellLibraryInfoTSet = transitive_set(
     },
     reductions = {
         "packages": _get_package_deps,
+    },
+    json_projections = {
+        "dep_units": _json_as_dep_units,
     },
 )
