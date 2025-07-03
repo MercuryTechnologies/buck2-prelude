@@ -10,5 +10,6 @@ GenruleToolchainInfo = provider(
     doc = "Genrule toolchain info",
     fields = {
         "zip_scrubber": provider_field(typing.Any, default = None),
+        "bash": provider_field(typing.Any, default = None),
     },
 )

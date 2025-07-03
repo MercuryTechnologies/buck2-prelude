@@ -1,16 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
-# This source code is dual-licensed under either the MIT license found in the
-# LICENSE-MIT file in the root directory of this source tree or the Apache
+# This source code is licensed under both the MIT license found in the
+# LICENSE-MIT file in the root directory of this source tree and the Apache
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
-# of this source tree. You may select, at your option, one of the
-# above-listed licenses.
+# of this source tree.
 
-load("@prelude//:paths.bzl", "paths")
 load("@prelude//haskell:library_info.bzl", "HaskellLibraryProvider")
 load("@prelude//haskell:link_info.bzl", "HaskellLinkInfo")
-load("@prelude//haskell:toolchain.bzl", "HaskellToolchainInfo")
+load("@prelude//haskell:toolchain.bzl", "HaskellToolchainInfo", "HaskellToolchainLibrary")
+load("@prelude//haskell:util.bzl", "is_haskell_src", "srcs_to_pairs")
 load("@prelude//linking:link_info.bzl", "LinkStyle")
+load("@prelude//paths.bzl", "paths")
 
 # This script computes a solution for loading a Haskell project in VSCode
 # The solution includes:
@@ -34,9 +34,7 @@ _HASKELL_BIN = "prelude//rules.bzl:haskell_binary"
 _HASKELL_IDE = "prelude//rules.bzl:haskell_ide"
 _HASKELL_LIB = "prelude//rules.bzl:haskell_library"
 
-linkStyle = LinkStyle("static")
-
-configuration_modifiers = ["ovr_config//third-party/ghc/constraints:8.8.3"]
+linkStyle = LinkStyle("shared")
 
 def _impl_target(ctx):
     target = ctx.cli_args.target
@@ -98,13 +96,7 @@ def _find_project_and_solve(ctx, target, project_universe = []):
 
 def _find_target_in_universe(ctx, target, project_universe):
     for p in project_universe:
-        cfg_p = ctx.lazy.configured_target_node(
-            p,
-            modifiers = configuration_modifiers,
-        ).catch().resolve()
-        if not (cfg_p.is_ok()) or cfg_p.unwrap() == None:
-            continue
-        cfg_p = cfg_p.unwrap()
+        cfg_p = ctx.configured_targets(p)
         members = cfg_p.resolved_attrs_eager(ctx).include_projects
         for member in members:
             if target.label.raw_target() == member.label.raw_target():
@@ -133,10 +125,7 @@ def _solution_for_haskell_ide(ctx, target):
     results = []
     deps = {}
     for dep in resolved_attrs.deps_query:
-        t = ctx.configured_targets(
-            dep.label.raw_target(),
-            modifiers = configuration_modifiers,
-        )
+        t = ctx.configured_targets(dep.label.raw_target())
         if (t.rule_type == _HASKELL_LIB or t.rule_type == _HASKELL_BIN):
             deps[dep.label] = t
     for lib in deps.values():
@@ -154,20 +143,33 @@ def _solution_for_haskell_lib(ctx, target, exclude):
     hli = ctx.analysis(target).providers().get(HaskellLibraryProvider)
 
     haskellLibs = {}
+    toolchain_libs = []
+
     for dep in resolved_attrs.deps + resolved_attrs.template_deps:
         if exclude.get(dep.label) == None:
             providers = ctx.analysis(dep.label).providers()
             lb = providers.get(HaskellLinkInfo)
             if lb != None:
                 haskellLibs[dep.label] = lb
+                continue
 
-    sources = []
-    for item in ctx.output.ensure_multiple(resolved_attrs.srcs.values()):
-        sources.append(item.abs_path())
+            lb = providers.get(HaskellToolchainLibrary)
+            if lb != None:
+                toolchain_libs.append(lb.name)
+
+    target_srcs = {
+        k: v
+        for k, v in srcs_to_pairs(resolved_attrs.srcs)
+        if is_haskell_src(k)
+    }
+    sources = [
+        item.abs_path()
+        for item in ctx.output.ensure_multiple(target_srcs.values())
+    ]
 
     import_dirs = {}
     root = ctx.root()
-    for key, item in resolved_attrs.srcs.items():
+    for key, item in target_srcs.items():
         # because BXL won't give you the path of an ensured artifact
         sp = get_path_without_materialization(item, ctx)
         (_, ext) = paths.split_extension(sp)
@@ -177,27 +179,40 @@ def _solution_for_haskell_lib(ctx, target, exclude):
     haskell_toolchain = ctx.analysis(resolved_attrs._haskell_toolchain.label)
     toolchain = haskell_toolchain.providers().get(HaskellToolchainInfo)
 
-    binutils_path = paths.join(root, toolchain.ghci_binutils_path)
-    cc_path = paths.join(root, toolchain.ghci_cc_path)
-    cxx_path = paths.join(root, toolchain.ghci_cxx_path)
-    cpp_path = paths.join(root, toolchain.ghci_cpp_path)
-
     flags = [
         "-this-unit-id",
-        "fbcode_fake_unit_id",
+        "{}-fake_unit_id".format(target.label.name),
+        "-dynamic",
         "-optP-undef",
         "-optP-traditional-cpp",
         "-I.",
-        "-no-global-package-db",
         "-no-user-package-db",
         "-hide-all-packages",
-        "-pgma%s" % cc_path,
-        "-pgml%s" % cxx_path,
-        "-pgmc%s" % cc_path,
-        "-pgmP%s" % cpp_path,
-        "-opta-B%s" % binutils_path,
-        "-optc-B%s" % binutils_path,
+        "-i",
     ]
+
+    if toolchain.ghci_binutils_path:
+        binutils_path = paths.join(root, toolchain.ghci_binutils_path)
+        flags.extend([
+            "-opta-B%s" % binutils_path,
+            "-optc-B%s" % binutils_path,
+        ])
+
+    if toolchain.ghci_cc_path:
+        cc_path = paths.join(root, toolchain.ghci_cc_path)
+        flags.extend([
+            "-pgma%s" % cc_path,
+            "-pgmc%s" % cc_path,
+        ])
+
+    if toolchain.ghci_cxx_path:
+        cxx_path = paths.join(root, toolchain.ghci_cxx_path)
+        flags.append("-pgml%s" % cxx_path)
+
+    if toolchain.ghci_cpp_path:
+        cpp_path = paths.join(root, toolchain.ghci_cpp_path)
+        flags.append("-pgmP%s" % cpp_path)
+
     flags.extend(resolved_attrs.compiler_flags)
 
     return {
@@ -205,6 +220,7 @@ def _solution_for_haskell_lib(ctx, target, exclude):
         "flags": flags,
         "generated_dependencies": externalSourcesForTarget(ctx, target),
         "haskell_deps": haskellLibs,
+        "toolchain_libs": toolchain_libs,
         "import_dirs": import_dirs.keys(),
         "sources": sources,
         "targets": targetsForTarget(ctx, target),
@@ -227,8 +243,7 @@ def externalSourcesForTarget(ctx, target):
     return paths
 
 def merge(results):
-    seen_flags = set()
-    flags = []
+    flags = {}
     sources = {}
     haskellDeps = {}
     import_dirs = {}
@@ -237,10 +252,9 @@ def merge(results):
     exclude_packages = {}
 
     for result in results:
+        # TODO flags are order sensitive, so avoid the dedup dictionary trick
         for flag in result["flags"]:
-            if not (flag in seen_flags):
-                flags.append(flag)
-                seen_flags.add(flag)
+            flags[flag] = ()
         for source in result["sources"]:
             sources[source] = ()
         for p, v in result["haskell_deps"].items():
@@ -256,7 +270,7 @@ def merge(results):
 
     return {
         "exclude_packages": exclude_packages,
-        "flags": flags,
+        "flags": flags.keys(),
         "generated_dependencies": generated_dependencies.keys(),
         "haskell_deps": haskellDeps,
         "import_dirs": import_dirs.keys(),
@@ -281,8 +295,12 @@ def _assembleSolution(ctx, linkStyle, result):
         flags.append(hli.name)
         ctx.output.ensure_multiple(hli.stub_dirs)
         ctx.output.ensure_multiple(hli.libs)
-        ctx.output.ensure_multiple(hli.import_dirs.values())
+        import_dirs = [d for ds in hli.import_dirs.values() for d in ds]
+        ctx.output.ensure_multiple(import_dirs)
         package_dbs[hli.db] = ()
+    for lib in result["toolchain_libs"]:
+        flags.append("-package")
+        flags.append(lib)
     for pkgdb in ctx.output.ensure_multiple(package_dbs.keys()):
         flags.append("-package-db")
         flags.append(pkgdb.abs_path())

@@ -1,10 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
-# This source code is dual-licensed under either the MIT license found in the
-# LICENSE-MIT file in the root directory of this source tree or the Apache
+# This source code is licensed under both the MIT license found in the
+# LICENSE-MIT file in the root directory of this source tree and the Apache
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
-# of this source tree. You may select, at your option, one of the
-# above-listed licenses.
+# of this source tree.
 
 load("@prelude//:paths.bzl", "paths")
 load("@prelude//cxx:cxx_context.bzl", "get_cxx_toolchain_info")
@@ -58,6 +57,10 @@ load(
     "with_unique_str_sonames",
 )
 load("@prelude//linking:types.bzl", "Linkage")
+load(
+    "@prelude//cxx:linker.bzl",
+    "get_rpath_origin",
+)
 load(
     "@prelude//utils:graph_utils.bzl",
     "depth_first_traversal",
@@ -191,7 +194,7 @@ def _build_haskell_omnibus_so(ctx: AnalysisContext) -> HaskellOmnibusData:
     # Need to exclude all transitive deps of excluded deps
     all_nodes_to_exclude = depth_first_traversal(
         dep_graph,
-        [dep[LinkableGraph].label for dep in preload_deps if LinkableGraph in dep],
+        [dep.label for dep in preload_deps],
     )
 
     # Body nodes should support haskell omnibus (e.g. cxx_library)
@@ -305,14 +308,14 @@ def _build_haskell_omnibus_so(ctx: AnalysisContext) -> HaskellOmnibusData:
     soname = "libghci_dependencies.so"
     extra_ldflags = [
         "-rpath",
-        "$ORIGIN/{}".format(so_symlinks_root_path),
+        "{}/{}".format(get_rpath_origin(linker_info.type), so_symlinks_root_path)
     ]
     link_result = cxx_link_shared_library(
         ctx,
         soname,
         opts = link_options(
             links = [
-                LinkArgs(flags = extra_ldflags),
+                LinkArgs(flags = cmd_args(cmd_args(extra_ldflags, delimiter=","), format="-Wl,{}")),
                 LinkArgs(infos = body_link_infos.values()),
                 LinkArgs(infos = tp_deps_shared_link_infos.values()),
             ],
@@ -328,6 +331,11 @@ def _build_haskell_omnibus_so(ctx: AnalysisContext) -> HaskellOmnibusData:
         omnibus = omnibus,
         so_symlinks_root = so_symlinks_root,
     )
+
+def _get_default_output(dependency: Dependency | None) -> Artifact | None:
+    if dependency == None:
+        return None
+    return dependency.get(DefaultInfo).default_outputs[0]
 
 # Use the script_template_processor.py script to generate a script from a
 # script template.
@@ -352,12 +360,12 @@ def _replace_macros_in_script_template(
         preload_libs: [str, None] = None) -> Artifact:
     toolchain_paths = {
         BINUTILS_PATH: haskell_toolchain.ghci_binutils_path,
-        GHCI_LIB_PATH: haskell_toolchain.ghci_lib_path.get(DefaultInfo).default_outputs[0],
+        GHCI_LIB_PATH: _get_default_output(haskell_toolchain.ghci_lib_path),
         CC_PATH: haskell_toolchain.ghci_cc_path,
         CPP_PATH: haskell_toolchain.ghci_cpp_path,
         CXX_PATH: haskell_toolchain.ghci_cxx_path,
-        GHCI_PACKAGER: haskell_toolchain.ghci_packager.get(DefaultInfo).default_outputs[0],
-        GHCI_GHC_PATH: haskell_toolchain.ghci_ghc_path.get(DefaultInfo).default_outputs[0],
+        GHCI_PACKAGER: _get_default_output(haskell_toolchain.ghci_packager),
+        GHCI_GHC_PATH: _get_default_output(haskell_toolchain.ghci_ghc_path),
     }
 
     if ghci_bin != None:
@@ -469,7 +477,7 @@ def _write_iserv_script(
         script_template = ghci_iserv_template,
         output_name = iserv_script_name,
         haskell_toolchain = haskell_toolchain,
-        ghci_iserv_path = ghci_iserv_path.get(DefaultInfo).default_outputs[0],
+        ghci_iserv_path = _get_default_output(ghci_iserv_path),
         preload_libs = preload_libs,
     )
     return iserv_script
@@ -534,10 +542,11 @@ def _build_preload_deps_root(
     )
 
 # Symlink the ghci binary that will be used, e.g. the internal fork in Haxlsh
-def _symlink_ghci_binary(ctx, haskell_toolchain: HaskellToolchainInfo, ghci_bin: Artifact):
+def _symlink_ghci_binary(ctx, ghci_bin: Artifact):
+    # TODO(T155760998): set ghci_ghc_path as a dependency instead of string
     ghci_bin_dep = ctx.attrs.ghci_bin_dep
     if not ghci_bin_dep:
-        ghci_bin_dep = haskell_toolchain.ghci_ghc_path
+        fail("GHC binary path not specified")
 
     # NOTE: In the buck1 version we'd symlink the binary only if a custom one
     # was provided, but in buck2 we're always setting `ghci_bin_dep` (i.e.
@@ -603,15 +612,15 @@ def _write_start_ghci(
         ctx.actions.copy_file(script_file, header_ghci)
 
 def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
-    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     enable_profiling = ctx.attrs.enable_profiling
 
     start_ghci_file = ctx.actions.declare_output("start.ghci")
     _write_start_ghci(ctx, start_ghci_file, enable_profiling)
 
     ghci_bin = ctx.actions.declare_output(ctx.attrs.name + ".bin/ghci")
-    _symlink_ghci_binary(ctx, haskell_toolchain, ghci_bin)
+    _symlink_ghci_binary(ctx, ghci_bin)
 
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     preload_deps_info = _build_preload_deps_root(ctx, haskell_toolchain)
 
     ghci_script_template = haskell_toolchain.ghci_script_template
@@ -626,13 +635,15 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_profiling,
     )
 
-    link_style = LinkStyle("static_pic")
+    link_style = LinkStyle("shared")
+    #link_style = LinkStyle("static_pic")
 
     packages_info = get_packages_info(
         ctx,
         link_style,
         specify_pkg_version = True,
         enable_profiling = enable_profiling,
+        use_empty_lib = False,
     )
 
     # Create package db symlinks
@@ -657,7 +668,8 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
 
             for prof, import_dir in lib.import_dirs.items():
                 artifact_suffix = get_artifact_suffix(link_style, prof)
-                lib_symlinks["hi-" + artifact_suffix] = import_dir
+                for imp in import_dir:
+                    lib_symlinks["mod-" + artifact_suffix + "/" + imp.short_path] = imp
 
             for o in lib.libs:
                 lib_symlinks[o.short_path] = o
@@ -726,7 +738,9 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
         "__{}__".format(ctx.label.name),
         output_artifacts,
     )
-    run = cmd_args(final_ghci_script, hidden = outputs)
+    ghci_bin_dep = ctx.attrs.ghci_bin_dep.get(RunInfo)
+    hidden_dep = [ghci_bin_dep] if ghci_bin_dep else []
+    run = cmd_args(final_ghci_script, hidden=hidden_dep + outputs)
 
     return [
         DefaultInfo(default_outputs = [root_output_dir]),

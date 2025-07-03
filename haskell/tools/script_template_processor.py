@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
-# This source code is dual-licensed under either the MIT license found in the
-# LICENSE-MIT file in the root directory of this source tree or the Apache
+# This source code is licensed under both the MIT license found in the
+# LICENSE-MIT file in the root directory of this source tree and the Apache
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
-# of this source tree. You may select, at your option, one of the
-# above-listed licenses.
+# of this source tree.
 
 
 """
@@ -75,12 +74,12 @@ def _replace_template_values(
         if ghci_lib_path:
             ghci_lib_canonical_path = os.path.realpath(ghci_lib_path)
 
-            replacement = "${{DIR}}/{user_ghci_path} -B{ghci_lib_path}".format(
+            replacement="${{DIR}}/{user_ghci_path} -B{ghci_lib_path}".format(
                 user_ghci_path=user_ghci_path,
                 ghci_lib_path=ghci_lib_canonical_path,
             )
         else:
-            replacement = "${{DIR}}/{user_ghci_path}".format(
+            replacement="${{DIR}}/{user_ghci_path}".format(
                 user_ghci_path=user_ghci_path,
             )
 

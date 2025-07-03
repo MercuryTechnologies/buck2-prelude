@@ -152,6 +152,8 @@ def process_genrule(
 
     executable_outs = getattr(ctx.attrs, "executable_outs", None)
 
+    executable_outs = getattr(ctx.attrs, "executable_outs", None)
+
     # TODO(cjhopman): verify output paths are ".", "./", or forward-relative.
     if out_attr != None:
         out_artifact = _declare_output(ctx, out_attr)
