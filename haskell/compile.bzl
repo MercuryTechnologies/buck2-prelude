@@ -220,6 +220,9 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     )
     md_args.add("--output", output)
 
+    ghc_args_file = actions.declare_output(arg.pkgname + "-ghc-args.txt")
+    md_args.add("--ghc-arg-file-path", ghc_args_file.as_output())
+
     haskell_toolchain = arg.haskell_toolchain
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
         bp_args = cmd_args()

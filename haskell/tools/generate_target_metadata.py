@@ -52,6 +52,11 @@ def main():
         action="append",
         help="GHC compiler argument to forward to `ghc -M`, including package flags.")
     parser.add_argument(
+        "--ghc-arg-file-path",
+        required=True,
+        type=str,
+        help="Path to write GHC argument file, so it remains accessible after this script completes.")
+    parser.add_argument(
         "--source-prefix",
         required=True,
         type=str,
@@ -104,7 +109,14 @@ def json_default_handler(o):
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
-        ghc_depends = run_ghc_depends(args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
+        ghc_depends = run_ghc_depends(
+            ghc=args.ghc,
+            ghc_args=args.ghc_arg,
+            ghc_arg_file_path=args.ghc_arg_file_path,
+            sources=args.source,
+            aux_paths=aux_paths,
+            worker_target_id=args.worker_target_id,
+        )
     else:
         ghc_depends = load_toolchain_packages(args.build_plan)
     th_modules = determine_th_modules(ghc_depends)
@@ -205,7 +217,15 @@ def determine_package_deps(ghc_depends):
     return package_deps
 
 
-def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
+def run_ghc_depends(
+    *,
+    ghc: str,
+    ghc_args: list[str],
+    ghc_arg_file_path: str,
+    sources: list[str],
+    aux_paths: list[str],
+    worker_target_id: str,
+):
     with tempfile.TemporaryDirectory() as dname:
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
@@ -215,8 +235,9 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
             worker_args = ["--worker-target-id={}".format(worker_target_id)]
         else:
             worker_args = []
+
         args = [
-            ghc, "-M", "-include-pkg-deps",
+            "-M", "-include-pkg-deps",
             # Note: `-outputdir '.'` removes the prefix of all targets:
             #       backend/src/Foo/Util.<ext> => Foo/Util.<ext>
             "-outputdir", ".",
@@ -224,14 +245,21 @@ def run_ghc_depends(ghc, ghc_args, sources, aux_paths, worker_target_id):
             "-dep-makefile", make_fname,
         ] + worker_args + ghc_args + haskell_sources + haskell_boot_sources
 
+        with open(ghc_arg_file_path, "w", encoding="utf-8") as args_file:
+            for arg in args:
+                args_file.write(arg)
+                args_file.write("\n")
+
+        args_outer = [ghc, "@" + ghc_arg_file_path]
+
         env = os.environ.copy()
         path = env.get("PATH", "")
         env["PATH"] = os.pathsep.join([path] + aux_paths)
 
-        res = subprocess.run(args, env=env, capture_output=True)
+        res = subprocess.run(args_outer, env=env, capture_output=True)
         if res.returncode != 0:
             # Write the GHC command on failure.
-            print(shlex.join(args), file=sys.stderr)
+            print(shlex.join(args_outer), file=sys.stderr)
 
         # Always forward stdout/stderr.
         # Note, Buck2 swallows stdout on successful builds.
