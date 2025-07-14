@@ -113,6 +113,7 @@ _Module = record(
     interfaces = field(list[Artifact]),
     hash = field(Artifact),
     objects = field(list[Artifact]),
+    hie_files = field(list[Artifact]),
     stub_dir = field(Artifact | None),
     prefix_dir = field(str),
 )
@@ -146,6 +147,9 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
+        hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
+        hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
+        hie_files = [hie_file]
         hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
 
         if link_style in [LinkStyle("static"), LinkStyle("static_pic")]:
@@ -156,6 +160,9 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             object_path = paths.replace_extension(src.short_path, "." + dyn_osuf + bootsuf)
             object = ctx.actions.declare_output("mod-" + suffix, object_path)
             objects.append(object)
+            hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
+            hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
+            hie_files.append(hie_file)
 
         if bootsuf == "":
             stub_dir = ctx.actions.declare_output("stub-" + suffix + "-" + module_name, dir=True)
@@ -169,6 +176,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             interfaces = interfaces,
             hash = hash,
             objects = objects,
+            hie_files = hie_files,
             stub_dir = stub_dir,
             prefix_dir = prefix_dir)
 
