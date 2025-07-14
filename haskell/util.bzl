@@ -189,11 +189,12 @@ def _source_prefix(source: Artifact, module_name: str) -> str:
 
     module_name_for_file = src_to_module_name(source_path)
 
-    # assert that source_path (without extension) and its module name have the same length
-    if len(source_path) != len(module_name_for_file):
-        fail("{} should have the same length as {}".format(source_path, module_name_for_file))
+    # If the module name matches exactly, no prefix
+    if module_name == module_name_for_file:
+        return ""
 
-    if module_name != module_name_for_file and module_name_for_file.endswith("." + module_name):
+    # If the module name is a suffix of the file's module name, extract the prefix
+    if module_name_for_file.endswith("." + module_name):
         # N.B. the prefix could have some '.' characters in it, use the source_path to determine the prefix
         return source_path[0:-len(module_name) - 1]
 

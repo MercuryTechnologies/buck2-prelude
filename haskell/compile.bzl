@@ -60,6 +60,7 @@ load("@prelude//haskell:util.bzl", "to_hash")
 CompiledModuleInfo = provider(fields = {
     "abi": provider_field(Artifact),
     "interfaces": provider_field(list[Artifact]),
+    "hie_files": provider_field(list[Artifact]),
     # TODO[AH] track this module's package-name/id & package-db instead.
     "db_deps": provider_field(list[Artifact]),
 })
@@ -69,6 +70,9 @@ def _compiled_module_project_as_abi(mod: CompiledModuleInfo) -> cmd_args:
 
 def _compiled_module_project_as_interfaces(mod: CompiledModuleInfo) -> cmd_args:
     return cmd_args(mod.interfaces)
+
+def _compiled_module_project_as_hie_files(mod: CompiledModuleInfo) -> cmd_args:
+    return cmd_args(mod.hie_files)
 
 def _compiled_module_reduce_as_packagedb_deps(children: list[dict[Artifact, None]], mod: CompiledModuleInfo | None) -> dict[Artifact, None]:
     # TODO[AH] is there a better way to avoid duplicate package-dbs?
@@ -82,6 +86,7 @@ CompiledModuleTSet = transitive_set(
     args_projections = {
         "abi": _compiled_module_project_as_abi,
         "interfaces": _compiled_module_project_as_interfaces,
+        "hie_files": _compiled_module_project_as_hie_files,
     },
     reductions = {
         "packagedb_deps": _compiled_module_reduce_as_packagedb_deps,
@@ -96,6 +101,7 @@ DynamicCompileResultInfo = provider(fields = {
 CompileResultInfo = record(
     objects = field(list[Artifact]),
     hi = field(list[Artifact]),
+    hie = field(list[Artifact]),
     stubs = field(Artifact),
     hashes = field(list[Artifact]),
     producing_indices = field(bool),
@@ -125,6 +131,11 @@ def _strip_prefix(prefix, s):
     return stripped if stripped != None else s
 
 
+
+
+
+
+
 def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_style: LinkStyle, enable_profiling: bool, suffix: str, module_prefix: str | None) -> dict[str, _Module]:
     modules = {}
 
@@ -147,7 +158,14 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
+        
+        prefix_dir = "mod-" + suffix
+        
         hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
+        # Strip "src/" prefix to match where GHC creates the files
+        # TODO: generalize this is only for testing
+        if hie_path.startswith("src/"):
+            hie_path = hie_path[4:]
         hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
         hie_files = [hie_file]
         hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
@@ -160,16 +178,11 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             object_path = paths.replace_extension(src.short_path, "." + dyn_osuf + bootsuf)
             object = ctx.actions.declare_output("mod-" + suffix, object_path)
             objects.append(object)
-            hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
-            hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
-            hie_files.append(hie_file)
 
         if bootsuf == "":
             stub_dir = ctx.actions.declare_output("stub-" + suffix + "-" + module_name, dir=True)
         else:
             stub_dir = None
-
-        prefix_dir = "mod-" + suffix
 
         modules[module_name] = _Module(
             source = src,
@@ -559,6 +572,7 @@ def _common_compile_module_args(
 
     args_for_file.add("-no-link", "-i")
     args_for_file.add("-hide-all-packages")
+    args_for_file.add("-fwrite-ide-info")
 
     if enable_profiling:
         args_for_file.add("-prof")
@@ -686,6 +700,7 @@ def _compile_module(
 
     objects = [outputs[obj] for obj in module.objects]
     his = [outputs[hi] for hi in module.interfaces]
+    hies = [outputs[hie] for hie in module.hie_files]
 
     compile_args_for_file.add("-o", objects[0])
     compile_args_for_file.add("-ohi", his[0])
@@ -831,6 +846,7 @@ def _compile_module(
         value = CompiledModuleInfo(
             abi = module.hash,
             interfaces = module.interfaces,
+            hie_files = module.hie_files,
             db_deps = exposed_package_dbs,
         ),
         children = [cross_package_modules] + this_package_modules,
@@ -929,6 +945,7 @@ def compile(
 
     interfaces = [interface for module in modules.values() for interface in module.interfaces]
     objects = [object for module in modules.values() for object in module.objects]
+    hie_files = [hie_file for module in modules.values() for hie_file in module.hie_files]
     stub_dirs = [
         module.stub_dir
         for module in modules.values()
@@ -950,7 +967,7 @@ def compile(
     dyn_module_tsets = ctx.actions.dynamic_output_new(_dynamic_do_compile(
         md_file = md_file,
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
-        outputs = {o: o.as_output() for o in interfaces + objects + stub_dirs + abi_hashes},
+        outputs = {o: o.as_output() for o in interfaces + objects + hie_files + stub_dirs + abi_hashes},
         direct_deps_by_name = {
             info.value.name: (info.value.empty_db, info.value.dynamic[enable_profiling])
             for info in direct_deps_info
@@ -1024,8 +1041,9 @@ def compile(
     return CompileResultInfo(
         objects = objects,
         hi = interfaces,
-        hashes = abi_hashes,
+        hie = hie_files,  # HIE files are now captured as outputs from the -hiedir directory
         stubs = stubs_dir,
+        hashes = abi_hashes,
         producing_indices = False,
         module_tsets = dyn_module_tsets,
     )
