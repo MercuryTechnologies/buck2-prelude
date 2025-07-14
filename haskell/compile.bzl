@@ -130,12 +130,6 @@ def _strip_prefix(prefix, s):
 
     return stripped if stripped != None else s
 
-
-
-
-
-
-
 def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_style: LinkStyle, enable_profiling: bool, suffix: str, module_prefix: str | None) -> dict[str, _Module]:
     modules = {}
 
@@ -162,10 +156,12 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         prefix_dir = "mod-" + suffix
         
         hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
-        # Strip "src/" prefix to match where GHC creates the files
-        # TODO: generalize this is only for testing
-        if hie_path.startswith("src/"):
-            hie_path = hie_path[4:]
+        # Strip module_prefix from the front if it exists
+        if module_prefix:
+            prefix_to_strip = module_prefix.replace(".", "/") + "/"
+            if hie_path.startswith(prefix_to_strip):
+                hie_path = hie_path[len(prefix_to_strip):]
+
         hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
         hie_files = [hie_file]
         hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
