@@ -761,6 +761,7 @@ def _compile_module(
     compile_cmd_hidden = [
         abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
         dependency_modules.project_as_args("abi"),
+        hies,
     ]
     if src_envs:
         for k, v in src_envs.items():
