@@ -700,6 +700,7 @@ def _compile_module(
 
     compile_args_for_file.add("-o", objects[0])
     compile_args_for_file.add("-ohi", his[0])
+    compile_args_for_file.add("-ohie", hies[0])
 
     # Set the output directories. We do not use the -outputdir flag, but set the directories individually.
     # Note, the -outputdir option is shorthand for the combination of -odir, -hidir, -hiedir, -stubdir and -dumpdir.
@@ -757,7 +758,6 @@ def _compile_module(
     compile_cmd_hidden = [
         abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
         dependency_modules.project_as_args("abi"),
-        hies,
     ]
     if src_envs:
         for k, v in src_envs.items():
