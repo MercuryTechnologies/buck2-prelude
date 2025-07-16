@@ -152,7 +152,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
-        hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
+        hie_path = paths.replace_extension(src.short_path, ".hie")
         hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
         hie_files = [hie_file]
         hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
@@ -170,6 +170,8 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             stub_dir = ctx.actions.declare_output("stub-" + suffix + "-" + module_name, dir=True)
         else:
             stub_dir = None
+        
+        prefix_dir = "mod-" + suffix
 
         modules[module_name] = _Module(
             source = src,
