@@ -152,16 +152,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
-        
-        prefix_dir = "mod-" + suffix
-        
         hie_path = paths.replace_extension(src.short_path, ".hie" + bootsuf)
-        # Strip module_prefix from the front if it exists
-        if module_prefix:
-            prefix_to_strip = module_prefix.replace(".", "/") + "/"
-            if hie_path.startswith(prefix_to_strip):
-                hie_path = hie_path[len(prefix_to_strip):]
-
         hie_file = ctx.actions.declare_output("mod-" + suffix, hie_path)
         hie_files = [hie_file]
         hash = ctx.actions.declare_output("mod-" + suffix, interface_path + ".hash")
@@ -1038,9 +1029,9 @@ def compile(
     return CompileResultInfo(
         objects = objects,
         hi = interfaces,
-        hie = hie_files,  # HIE files are now captured as outputs from the -hiedir directory
-        stubs = stubs_dir,
         hashes = abi_hashes,
+        stubs = stubs_dir,
+        hie = hie_files,
         producing_indices = False,
         module_tsets = dyn_module_tsets,
     )
