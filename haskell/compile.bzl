@@ -170,7 +170,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             stub_dir = ctx.actions.declare_output("stub-" + suffix + "-" + module_name, dir=True)
         else:
             stub_dir = None
-        
+
         prefix_dir = "mod-" + suffix
 
         modules[module_name] = _Module(
