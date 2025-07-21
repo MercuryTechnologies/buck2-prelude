@@ -10,6 +10,7 @@
 Note, boot files will be represented by a `-boot` suffix in the module name.
 
 The result is a JSON object with the following fields:
+* `exposed_modules`: List of modules exposed by the package.
 * `th_modules`: List of modules that require Template Haskell.
 * `module_mapping`: Mapping from source inferred module name to actual module name, if different.
 * `module_graph`: Intra-package module dependencies, `dict[modname, list[modname]]`.
@@ -68,7 +69,7 @@ def main():
         type=str,
         action="append",
         default=[],
-        help="Package dependencies formated as `NAME:PREFIX_PATH`.")
+        help="Package dependencies formatted as `NAME:PREFIX_PATH`.")
     parser.add_argument(
         "--bin-path",
         type=Path,
@@ -107,11 +108,13 @@ def obtain_target_metadata(args):
         ghc_depends = run_ghc_depends(args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
     else:
         ghc_depends = load_toolchain_packages(args.build_plan)
+    exposed_modules = determine_exposed_modules(ghc_depends)
     th_modules = determine_th_modules(ghc_depends)
     module_mapping = determine_module_mapping(ghc_depends, args.source_prefix)
     module_graph = determine_module_graph(ghc_depends)
     package_deps = determine_package_deps(ghc_depends)
     return {
+        "exposed_modules": exposed_modules,
         "th_modules": th_modules,
         "module_mapping": module_mapping,
         "module_graph": module_graph,
@@ -129,6 +132,12 @@ def determine_th_modules(ghc_depends):
         modname
         for modname, properties in ghc_depends.items()
         if uses_th(properties.get("options", []))
+    ]
+
+def determine_exposed_modules(ghc_depends):
+    return [
+        modname
+        for modname, _ in ghc_depends.items()
     ]
 
 

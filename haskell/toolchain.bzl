@@ -66,9 +66,15 @@ HaskellPackage = record(
 def _haskell_package_info_as_package_db(p: HaskellPackage):
     return cmd_args(p.db)
 
+def _haskell_package_set_root(children: list[HaskellPackage], p: HaskellPackage | None):
+    return p
+
 HaskellPackageDbTSet = transitive_set(
     args_projections = {
         "package_db": _haskell_package_info_as_package_db,
+    },
+    reductions = {
+        "root": _haskell_package_set_root,
     }
 )
 
