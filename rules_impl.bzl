@@ -554,6 +554,13 @@ inlined_extra_attributes = {
         "_cxx_toolchain": toolchains_common.cxx(),
         "_haskell_toolchain": toolchains_common.haskell(),
     },
+    "haskell_toolchain_library": {
+        "_haskell_toolchain": toolchains_common.haskell(),
+        "_generate_toolchain_lib_metadata": attrs.dep(
+            providers = [RunInfo],
+            default = "prelude//haskell/tools:generate_toolchain_lib_metadata"
+        )
+    },
     "llvm_link_bitcode": {
         "_cxx_toolchain": toolchains_common.cxx(),
     },

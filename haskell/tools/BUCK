@@ -19,6 +19,12 @@ prelude.python_bootstrap_binary(
 )
 
 prelude.python_bootstrap_binary(
+    name = "generate_toolchain_lib_metadata",
+    main = "generate_toolchain_lib_metadata.py",
+    visibility = ["PUBLIC"]
+)
+
+prelude.python_bootstrap_binary(
     name = "ghc_wrapper",
     main = "ghc_wrapper.py",
     visibility = ["PUBLIC"],
