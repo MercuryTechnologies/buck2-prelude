@@ -179,8 +179,48 @@ def _attr_preferred_linkage(ctx: AnalysisContext) -> Linkage:
 
 # --
 
+def _toolchain_target_metadata_impl(actions, output, libname, pkg_deps, md_gen) -> list[Provider]:
+    package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+
+    md_args = cmd_args(md_gen, "--package-name", libname, "--output", output)
+    if libname in package_db:
+        pkg = package_db[libname].reduce("root")
+        md_args.add("--package-dir", pkg.db)
+
+    actions.run(
+        md_args,
+        category = "haskell_toolchain_library_metadata",
+        identifier = libname
+    )
+
+    return []
+
+_toolchain_target_metadata = dynamic_actions(
+    impl = _toolchain_target_metadata_impl,
+    attrs = {
+        "output": dynattrs.output(),
+        "libname": dynattrs.value(typing.Any),
+        "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
+        "md_gen": dynattrs.value(typing.Any),
+    },
+)
+
 def haskell_toolchain_library_impl(ctx: AnalysisContext):
-    return [DefaultInfo(), HaskellToolchainLibrary(name = ctx.attrs.name)]
+    md_file = ctx.actions.declare_output(ctx.label.name + ".md.json")
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
+    ctx.actions.dynamic_output_new(
+        _toolchain_target_metadata(output=md_file.as_output(),
+                                   libname=ctx.attrs.name,
+                                   pkg_deps=pkg_deps,
+                                   md_gen=ctx.attrs._generate_toolchain_lib_metadata[RunInfo],
+                                   )
+    )
+    sub_targets = { "metadata": [DefaultInfo(default_output = md_file)] }
+    return [
+        DefaultInfo(sub_targets = sub_targets),
+        HaskellToolchainLibrary(name = ctx.attrs.name)
+    ]
 
 # --
 
