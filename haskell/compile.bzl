@@ -147,12 +147,21 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
 
         module_name = src_to_module_name(src.short_path) + bootsuf
         if module_prefix:
-            interface_path = paths.replace_extension(module_prefix.replace(".", "/") + "/" + src.short_path, "." + hisuf + bootsuf)
+            short_path_stripped = module_prefix.replace(".", "/") + "/" + src.short_path
+            interface_path = paths.replace_extension(short_path_stripped, "." + hisuf + bootsuf)
         else:
-            interface_path = paths.replace_extension(src.short_path, "." + hisuf + bootsuf)
+            s = src.short_path
+            for prefix in ctx.attrs.strip_prefix:
+                s1 = strip_prefix(prefix, src.short_path)
+                if s1 != None:
+                   s = s1
+                   break
+            short_path_stripped = _strip_prefix("/", s)
+            interface_path = paths.replace_extension(short_path_stripped, "." + hisuf + bootsuf)
+        #print("interface_path = {}".format(interface_path))
         interface = ctx.actions.declare_output("mod-" + suffix, interface_path)
         interfaces = [interface]
-        object_path = paths.replace_extension(src.short_path, "." + osuf + bootsuf)
+        object_path = paths.replace_extension(short_path_stripped, "." + osuf + bootsuf)
         object = ctx.actions.declare_output("mod-" + suffix, object_path)
         objects = [object]
         if ctx.attrs.incremental:
@@ -523,6 +532,7 @@ def _common_compile_module_args(
     actions: AnalysisActions,
     *,
     compiler_flags: list[ArgLike],
+    incremental: bool,
     ghc_wrapper: RunInfo,
     haskell_toolchain: HaskellToolchainInfo,
     pkg_deps: ResolvedDynamicValue | None,
@@ -623,7 +633,10 @@ def _common_compile_module_args(
         format="--bin-exe={}",
     ))
 
-    packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
+    if incremental:
+        packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
+    else:
+        packagedb_args = cmd_args(libs.project_as_args("package_db"))
     packagedb_args.add(package_db_tset.project_as_args("package_db"))
 
     package_env_file = make_package_env(
@@ -784,17 +797,14 @@ def _compile_module(
 
     compile_cmd = cmd_args(compile_cmd_args, hidden = compile_cmd_hidden)
 
-    # add each module dir prefix to search path
-    for prefix in source_prefixes:
-        compile_cmd.add(
-            cmd_args(
-                cmd_args(md_file, format = "-i{}", ignore_artifacts=True, parent=1),
-                "/",
-                paths.join(module.prefix_dir, prefix),
-                delimiter=""
-            )
+    compile_cmd.add(
+        cmd_args(
+            cmd_args(md_file, format = "-i{}", ignore_artifacts=True, parent=1),
+            "/",
+            module.prefix_dir,
+            delimiter=""
         )
-
+    )
 
     compile_cmd.add(cmd_args(library_deps, prepend = "-package"))
     compile_cmd.add(cmd_args(toolchain_deps, prepend = "-package"))
@@ -1074,8 +1084,6 @@ def _compile_non_incr(
 
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
-    print("module_tsets = {}".format(module_tsets))
-
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
         module_tsets[module_name] = _make_module_tset_non_incr(actions)
@@ -1096,6 +1104,7 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
     common_args = _common_compile_module_args(
         actions,
         compiler_flags = arg.compiler_flags,
+        incremental = incremental,
         deps = arg.deps,
         external_tool_paths = arg.external_tool_paths,
         extra_libraries = arg.extra_libraries,
