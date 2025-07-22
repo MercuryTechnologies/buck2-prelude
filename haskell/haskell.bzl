@@ -465,6 +465,7 @@ def _make_package(
         module_map = md["module_mapping"]
 
         source_prefixes = get_source_prefixes(ctx.attrs.srcs, module_map)
+        source_prefixes_excluded = [prefix for prefix in source_prefixes if prefix not in ctx.attrs.strip_prefix]
 
         modules = [
             module
@@ -475,9 +476,16 @@ def _make_package(
         # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
         #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
         #     for each exposed module
-        import_dirs = ["."] if for_deps else [
-            mk_artifact_dir("mod", profiled, src_prefix) for profiled in profiling for src_prefix in source_prefixes
-        ]
+        if for_deps:
+            import_dirs = ["."]
+        elif not source_prefixes_excluded:
+            import_dirs = [
+                mk_artifact_dir("mod", profiled) for profiled in profiling
+            ]
+        else:
+            import_dirs = [
+                mk_artifact_dir("mod", profiled, src_prefix) for profiled in profiling for src_prefix in source_prefixes_excluded
+            ]
 
         conf = [
             "name: " + pkgname,
