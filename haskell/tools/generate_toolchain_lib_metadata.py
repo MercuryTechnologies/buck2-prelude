@@ -64,12 +64,6 @@ def run_ghc_pkg(cmd, pkgdb=None, args=[]):
     if res.returncode != 0:
         print(shlex.join(args), file=sys.stderr)
 
-    # Always forward stdout/stderr.
-    # Note, Buck2 swallows stdout on successful builds.
-    # Redirect to stderr to avoid this.
-    sys.stderr.buffer.write(res.stdout)
-    sys.stderr.buffer.write(res.stderr)
-
     if res.returncode != 0:
         # Fail if ghc-pkg failed.
         sys.exit(res.returncode)
