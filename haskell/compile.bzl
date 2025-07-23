@@ -921,6 +921,7 @@ def compile_args(
         main,
         deps,
         sources,
+        external_tool_paths,
         link_style: LinkStyle,
         enable_profiling: bool,
         package_env_args: cmd_args,
@@ -991,6 +992,12 @@ def compile_args(
     pre_args = pre.set.project_as_args("args")
     compile_args.add(cmd_args(pre_args, format = "-optP={}"))
 
+    compile_args.add(cmd_args(
+        external_tool_paths,
+        format="--bin-exe={}",
+    ))
+
+
     if pkgname:
         compile_args.add(["-this-unit-id", pkgname])
 
@@ -1049,7 +1056,8 @@ def _compile_non_incr(
     link_style = arg.link_style
     enable_profiling = arg.enable_profiling
 
-    compile_cmd = cmd_args(haskell_toolchain.compiler, hidden = outputs.values())
+    compile_cmd = cmd_args(arg.ghc_wrapper, hidden = outputs.values())
+    compile_cmd.add("--ghc", haskell_toolchain.compiler)
 
     args = compile_args(
         actions,
@@ -1059,6 +1067,7 @@ def _compile_non_incr(
         main = arg.main,
         deps = arg.deps,
         sources = arg.sources,
+        external_tool_paths = arg.external_tool_paths,
         link_style = link_style,
         enable_profiling = enable_profiling,
         package_env_args = common_args.package_env_args,
