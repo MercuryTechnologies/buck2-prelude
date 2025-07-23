@@ -201,7 +201,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
     ghc_args.add(arg.compiler_flags)
 
-    md_args = cmd_args()
+    md_args = cmd_args(arg.md_gen)
     md_args.add(cmd_args(
         arg.external_tool_paths,
         format="--bin-exe={}",
@@ -221,7 +221,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args.add("--output", output)
 
     haskell_toolchain = arg.haskell_toolchain
-    if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+    if arg.allow_worker and haskell_toolchain.use_worker and arg.haskell_toolchain.worker_make:
         bp_args = cmd_args()
         bp_args.add("--ghc", arg.haskell_toolchain.compiler)
         bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
@@ -252,27 +252,23 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             bp_args,
             category = "haskell_buildplan",
             identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
             exe = WorkerRunInfo(worker = arg.worker),
         )
         md_args.add("--build-plan", build_plan)
-
-    md_args_output = actions.declare_output("dynamic_target_metadata_args")
-    actions.write(
-        md_args_output.as_output(),
-        md_args,
-        allow_args = True,
-    )
-
-    md_args_outer = cmd_args(arg.md_gen)
-    md_args_outer.add(cmd_args(md_args_output, format="@{}", hidden = md_args))
-
-    actions.run(
-        md_args_outer,
-        category = "haskell_metadata",
-        identifier = arg.suffix if arg.suffix else None,
-        # explicit turn this on for local_only actions to upload their results.
-        allow_cache_upload = True,
-    )
+        actions.run(
+            md_args,
+            category = "haskell_metadata",
+            identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
+        )
+    else:
+        actions.run(
+            md_args,
+            category = "haskell_metadata",
+            identifier = arg.suffix if arg.suffix else None,
+            weight = 8,
+        )
 
     return []
 
@@ -613,11 +609,10 @@ def _common_compile_module_args(
         "env",
     ]))
     package_env = cmd_args(delimiter = "\n")
-    if not (allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make):
-        package_env.add(cmd_args(
-            packagedb_args,
-            format = "package-db {}",
-        ).relative_to(package_env_file, parent = 1))
+    package_env.add(cmd_args(
+        packagedb_args,
+        format = "package-db {}",
+    ).relative_to(package_env_file, parent = 1))
     actions.write(
         package_env_file,
         package_env,
