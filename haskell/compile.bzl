@@ -507,9 +507,8 @@ CommonCompileModuleArgs = record(
 def add_worker_args(
         haskell_toolchain: HaskellToolchainInfo,
         command: cmd_args,
-        pkgname: str | None) -> None:
-    if pkgname != None:
-        command.add("--worker-target-id", "singleton" if haskell_toolchain.worker_make else to_hash(pkgname))
+        pkgname: str) -> None:
+    command.add("--worker-target-id", "singleton" if haskell_toolchain.worker_make else to_hash(pkgname))
 
 def make_package_env(
         actions,
@@ -562,7 +561,7 @@ def _common_compile_module_args(
         allow_worker: bool,
         toolchain_deps_by_name,
         direct_deps_by_name,
-        pkgname: str | None = None) -> CommonCompileModuleArgs:
+        pkgname: str) -> CommonCompileModuleArgs:
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
@@ -614,9 +613,7 @@ def _common_compile_module_args(
     pre = cxx_merge_cpreprocessors_actions(actions, [], inherited_pre)
     pre_args = pre.set.project_as_args("args")
     args_for_file.add(cmd_args(pre_args, format = "-optP={}"))
-
-    if pkgname:
-        args_for_file.add(["-this-unit-id", pkgname])
+    args_for_file.add(["-this-unit-id", pkgname])
 
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
@@ -1258,10 +1255,10 @@ def compile(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
+        pkgname: str,
         worker: WorkerInfo | None = None,
         incremental: bool = False,
-        is_haskell_binary: bool = False,
-        pkgname: str | None = None) -> CompileResultInfo:
+        is_haskell_binary: bool = False) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
     modules = _modules_by_name(ctx, sources = ctx.attrs.srcs, link_style = link_style, enable_profiling = enable_profiling, suffix = artifact_suffix, module_prefix = ctx.attrs.module_prefix, is_haskell_binary = is_haskell_binary)
