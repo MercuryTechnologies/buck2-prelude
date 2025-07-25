@@ -299,15 +299,13 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         )
         md_args.add("--build-plan", build_plan)
 
-    md_args_output = actions.declare_output("dynamic_target_metadata_args")
-    actions.write(
-        md_args_output.as_output(),
-        md_args,
-        allow_args = True,
-    )
-
     md_args_outer = cmd_args(arg.md_gen)
-    md_args_outer.add(cmd_args(md_args_output, format = "@{}", hidden = md_args))
+    md_args_outer.add(at_argfile(
+        actions = actions,
+        name = "dynamic_target_metadata_args",
+        args = md_args,
+        allow_args = True,
+    ))
 
     actions.run(
         md_args_outer,
