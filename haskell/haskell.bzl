@@ -943,7 +943,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     sub_targets = {}
     extra = {}
 
-    if(ctx.attrs.use_same_package_name):
+    if ctx.attrs.use_same_package_name:
         libname = ctx.label.name
         pkgname = libname
     else:
