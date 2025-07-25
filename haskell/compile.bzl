@@ -265,31 +265,39 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
 
     haskell_toolchain = arg.haskell_toolchain
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-        bp_args = cmd_args()
-        bp_args.add("--ghc", arg.haskell_toolchain.compiler)
-        bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
-        add_worker_args(haskell_toolchain, bp_args, arg.pkgname)
-
         build_plan = actions.declare_output(arg.pkgname + ".depends.json")
         makefile = actions.declare_output(arg.pkgname + ".depends.make")
 
-        bp_args.add("-j")
-        bp_args.add("-hide-all-packages")
-        bp_args.add("-include-pkg-deps")
+        bp_ghc_args = cmd_args()
+        bp_ghc_args.add("-j")
+        bp_ghc_args.add("-hide-all-packages")
+        bp_ghc_args.add("-include-pkg-deps")
+        bp_ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
+        bp_ghc_args.add(cmd_args(packages_info.exposed_package_args))
+        bp_ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
+        bp_ghc_args.add(arg.compiler_flags)
+        bp_ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
+        bp_ghc_args.add("-dep-makefile", cmd_args(makefile, ignore_artifacts = True))
+        bp_ghc_args.add("-outputdir", ".")
+        bp_ghc_args.add("-this-unit-id", arg.pkgname)
+        bp_ghc_args.add(cmd_args(arg.sources))
+
+        ghc_args_file = argfile(
+            actions = actions,
+            name = "haskell_metadata_ghc_{}.args".format(arg.pkgname),
+            args = bp_ghc_args,
+        )
+
+        bp_args = cmd_args()
+        bp_args.add("-M")
+        bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
+        add_worker_args(haskell_toolchain, bp_args, arg.pkgname)
+
         bp_args.add(cmd_args(
             arg.external_tool_paths,
             format = "--bin-exe={}",
         ))
-        bp_args.add(cmd_args(arg.toolchain_libs, prepend = package_flag))
-        bp_args.add(cmd_args(packages_info.exposed_package_args))
-        bp_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
-        bp_args.add(arg.compiler_flags)
-        bp_args.add("-M")
-        bp_args.add("-dep-json", build_plan.as_output())
-        bp_args.add("-dep-makefile", makefile.as_output())
-        bp_args.add("-outputdir", ".")
-        bp_args.add("-this-unit-id", arg.pkgname)
-        bp_args.add(cmd_args(arg.sources))
+        bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
 
         actions.run(
             bp_args,
