@@ -186,4 +186,4 @@ def recompute_abi_hash(ghc, abi_out, use_persistent_workers):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
