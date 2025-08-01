@@ -231,6 +231,23 @@ def transitive_metadata(actions: AnalysisActions, pkgname: str, packages_info: P
     actions.write_json(dep_units_file, dep_units, with_inputs = True, pretty = True)
     return cmd_args(dep_units_file, prepend = "--dep-units")
 
+def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo) -> cmd_args:
+    package_flag = _package_flag(arg.haskell_toolchain)
+    args = cmd_args(
+        "-no-link",
+        "-i",
+        "-j",
+        "-hide-all-packages",
+        "-fwrite-ide-info",
+        "-package-env=-",
+    )
+    args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
+    args.add(cmd_args(packages_info.exposed_package_args))
+    args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
+    args.add(arg.compiler_flags)
+    args.add("-this-unit-id", arg.pkgname)
+    return args
+
 def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
@@ -249,14 +266,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
-    ghc_args = cmd_args()
-    ghc_args.add("-j")
-    ghc_args.add("-hide-all-packages")
-
-    ghc_args.add(cmd_args(arg.toolchain_libs, prepend = package_flag))
-    ghc_args.add(cmd_args(packages_info.exposed_package_args))
-    ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
-    ghc_args.add(arg.compiler_flags)
+    ghc_args = unit_args(actions, arg, packages_info)
 
     md_args = cmd_args()
     md_args.add(cmd_args(
@@ -282,24 +292,16 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         build_plan = actions.declare_output(arg.pkgname + ".depends.json")
         makefile = actions.declare_output(arg.pkgname + ".depends.make")
 
-        bp_ghc_args = cmd_args()
-        bp_ghc_args.add("-j")
-        bp_ghc_args.add("-hide-all-packages")
-        bp_ghc_args.add("-include-pkg-deps")
-        bp_ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
-        bp_ghc_args.add(cmd_args(packages_info.exposed_package_args))
-        bp_ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
-        bp_ghc_args.add(arg.compiler_flags)
-        bp_ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
-        bp_ghc_args.add("-dep-makefile", cmd_args(makefile, ignore_artifacts = True))
-        bp_ghc_args.add("-outputdir", ".")
-        bp_ghc_args.add("-this-unit-id", arg.pkgname)
-        bp_ghc_args.add(cmd_args(arg.sources))
+        ghc_args.add("-include-pkg-deps")
+        ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
+        ghc_args.add("-dep-makefile", cmd_args(makefile, ignore_artifacts = True))
+        ghc_args.add("-outputdir", ".")
+        ghc_args.add(cmd_args(arg.sources))
 
         ghc_args_file = argfile(
             actions = actions,
             name = "haskell_metadata_ghc_{}.args".format(arg.pkgname),
-            args = bp_ghc_args,
+            args = ghc_args,
         )
 
         bp_args = cmd_args()
