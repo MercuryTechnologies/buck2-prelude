@@ -920,14 +920,6 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
 
     worker = ctx.attrs._worker[WorkerInfo] if ctx.attrs._worker else None
 
-    md_file = target_metadata(
-        ctx,
-        sources = ctx.attrs.srcs,
-        worker = worker,
-    )
-    sub_targets["metadata"] = [DefaultInfo(default_output = md_file)]
-
-
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
     # TODO(wavewave): Create package_env_file in compile.
@@ -951,6 +943,14 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
             if link_style == LinkStyle("shared") and enable_profiling:
                 # Profiling isn't support with dynamic linking
                 continue
+
+            md_file = target_metadata(
+                ctx,
+                sources = ctx.attrs.srcs,
+                link_style = link_style,
+                enable_profiling = enable_profiling,
+                worker = worker,
+            )
 
             hlib_build_out = _build_haskell_lib(
                 ctx,
@@ -1005,7 +1005,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                         compiled = compiled,
                         link_style = link_style,
                         enable_profiling = enable_profiling,
-                    ),
+                    ) | dict(metadata = [DefaultInfo(default_output = md_file)]),
                 )]
 
     pic_behavior = ctx.attrs._cxx_toolchain[CxxToolchainInfo].pic_behavior
@@ -1320,6 +1320,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     md_file = target_metadata(
         ctx,
         sources = ctx.attrs.srcs,
+        link_style = link_style,
+        enable_profiling = enable_profiling,
         worker = worker,
     )
 
