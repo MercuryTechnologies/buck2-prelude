@@ -1042,16 +1042,6 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
 
     worker = ctx.attrs._worker[WorkerInfo] if ctx.attrs._worker else None
 
-    md_file = target_metadata(
-        ctx,
-        link_style = LinkStyle("shared"),
-        enable_profiling = False,
-        sources = ctx.attrs.srcs,
-        worker = worker,
-    )
-    sub_targets["metadata"] = [DefaultInfo(default_output = md_file)]
-
-
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
     # The non-profiling library is also needed to build the package with
@@ -1063,6 +1053,18 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
             if link_style == LinkStyle("shared") and enable_profiling:
                 # Profiling isn't support with dynamic linking
                 continue
+
+            # Request the build plan from GHC in order to resolve dependencies between modules.
+            # This is executed for each output style even though the dependency graph is independent of it.
+            # The reason for that is that the persistent worker initializes the module graph fully during this request,
+            # requiring the linking and profiling settings to be applied.
+            md_file = target_metadata(
+                ctx,
+                link_style = link_style,
+                enable_profiling = enable_profiling,
+                sources = ctx.attrs.srcs,
+                worker = worker,
+            )
 
             hlib_build_out = _build_haskell_lib(
                 ctx,
@@ -1116,7 +1118,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                         compiled = compiled,
                         link_style = link_style,
                         enable_profiling = enable_profiling,
-                    ),
+                    ) | dict(metadata = [DefaultInfo(default_output = md_file)]),
                 )]
 
     pic_behavior = ctx.attrs._cxx_toolchain[CxxToolchainInfo].pic_behavior
@@ -1430,8 +1432,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     md_file = target_metadata(
         ctx,
-        link_style = LinkStyle("shared"),
-        enable_profiling = False,
+        link_style = link_style,
+        enable_profiling = enable_profiling,
         sources = ctx.attrs.srcs,
         worker = worker,
     )

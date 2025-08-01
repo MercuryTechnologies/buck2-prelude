@@ -220,9 +220,9 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         arg.direct_deps_link_info,
         arg.haskell_toolchain,
         arg.haskell_direct_deps_lib_infos,
-        LinkStyle("shared"),
+        arg.link_style,
         specify_pkg_version = False,
-        enable_profiling = False,
+        enable_profiling = arg.enable_profiling,
         use_empty_lib = True,
         for_deps = True,
         pkg_deps = pkg_deps,
@@ -335,7 +335,9 @@ def target_metadata(
         sources: list[Artifact],
         suffix: str = "",
         worker: WorkerInfo | None) -> Artifact:
-    md_file = ctx.actions.declare_output(ctx.label.name + suffix + ".md.json")
+    prof_suffix = "-prof" if enable_profiling else ""
+    link_suffix = "-" + link_style.value
+    md_file = ctx.actions.declare_output(ctx.label.name + suffix + link_suffix + prof_suffix + ".md.json")
     md_gen = ctx.attrs._generate_target_metadata[RunInfo]
 
     libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
@@ -385,6 +387,8 @@ def target_metadata(
             pkgname = pkgname,
             label = ctx.label,
             incremental = ctx.attrs.incremental,
+            link_style = link_style,
+            enable_profiling = enable_profiling,
         ),
     ))
 
