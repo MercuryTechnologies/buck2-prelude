@@ -670,10 +670,10 @@ def _common_compile_module_args(
     # target-level dependencies. needed for non-incremental build.
     target_deps_args = cmd_args()
 
-    for pkg in toolchain_deps_by_name.keys():
+    for pkg in toolchain_deps_by_name:
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
-    for pkg in direct_deps_by_name.keys():
+    for pkg in direct_deps_by_name:
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
     return CommonCompileModuleArgs(
@@ -1040,7 +1040,7 @@ def compile_args(
         args_for_file = compile_args,
     )
 
-def _make_module_tset_non_incr(
+def _make_module_tsets_non_incr(
         actions: AnalysisActions,
         module: _Module,
         package_deps: dict[str, list[str]],
@@ -1092,6 +1092,7 @@ def _compile_non_incr(
         graph,
         mapped_modules,
         th_modules,
+        pkg_deps,
         package_deps,
         direct_deps_by_name,
         source_prefixes,
@@ -1141,7 +1142,7 @@ def _compile_non_incr(
 
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
-        module_tsets[module_name] = _make_module_tset_non_incr(
+        module_tsets[module_name] = _make_module_tsets_non_incr(
             actions,
             module = module,
             package_deps = package_deps.get(module_name, {}),
@@ -1150,6 +1151,25 @@ def _compile_non_incr(
         )
         for deps in module_tsets[module_name].children:
             compile_cmd_hidden.append(deps.project_as_args("interfaces"))
+
+    libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
+
+    direct_toolchain_libs = [
+        dep[HaskellToolchainLibrary].name
+        for dep in arg.deps
+        if HaskellToolchainLibrary in dep
+    ]
+    toolchain_libs = direct_toolchain_libs + libs.reduce("packages")
+
+    if haskell_toolchain.packages:
+        package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+    else:
+        package_db = []
+
+    package_db_tset = actions.tset(
+        HaskellPackageDbTSet,
+        children = [package_db[name] for name in toolchain_libs if name in package_db],
+    )
 
     actions.run(
         cmd_args(compile_cmd, hidden = compile_cmd_hidden),
@@ -1219,6 +1239,7 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
             graph,
             mapped_modules,
             th_modules,
+            pkg_deps,
             package_deps,
             direct_deps_by_name,
             source_prefixes,
