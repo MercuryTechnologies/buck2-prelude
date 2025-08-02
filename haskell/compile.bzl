@@ -676,10 +676,10 @@ def _common_compile_module_args(
     # target-level dependencies. needed for non-incremental build.
     target_deps_args = cmd_args()
 
-    for pkg in toolchain_deps_by_name.keys():
+    for pkg in toolchain_deps_by_name:
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
-    for pkg in direct_deps_by_name.keys():
+    for pkg in direct_deps_by_name:
         target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
     return CommonCompileModuleArgs(
@@ -1046,7 +1046,7 @@ def compile_args(
         args_for_file = compile_args,
     )
 
-def _make_module_tset_non_incr(
+def _make_module_tsets_non_incr(
         actions: AnalysisActions,
         module: _Module,
         package_deps: dict[str, list[str]],
@@ -1147,7 +1147,7 @@ def _compile_non_incr(
 
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
-        module_tsets[module_name] = _make_module_tset_non_incr(
+        module_tsets[module_name] = _make_module_tsets_non_incr(
             actions,
             module = module,
             package_deps = package_deps.get(module_name, {}),
