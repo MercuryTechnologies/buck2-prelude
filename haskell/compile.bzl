@@ -937,14 +937,12 @@ def compile_args(
         external_tool_paths,
         link_style: LinkStyle,
         enable_profiling: bool,
+        direct_deps_link_info,
+        haskell_direct_deps_lib_infos,
         package_env_args: cmd_args,
         target_deps_args: cmd_args,
         pkgname = None,
         suffix: str = "") -> CompileArgsInfo:
-    # for now
-    direct_deps_link_info = []
-    haskell_direct_deps_lib_infos = []
-
     compile_cmd = cmd_args()
     compile_cmd.add(haskell_toolchain.compiler_flags)
 
@@ -1001,7 +999,6 @@ def compile_args(
     )
 
     compile_args.add(packages_info.exposed_package_args)
-    compile_args.add(packages_info.packagedb_args)
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
@@ -1112,6 +1109,8 @@ def _compile_non_incr(
         sources = arg.sources,
         external_tool_paths = arg.external_tool_paths,
         link_style = link_style,
+        direct_deps_link_info = arg.direct_deps_link_info,
+        haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
         enable_profiling = enable_profiling,
         package_env_args = common_args.package_env_args,
         target_deps_args = common_args.target_deps_args,
@@ -1279,6 +1278,14 @@ def compile(
         for lib in attr_deps_haskell_link_infos(ctx)
     ]
 
+    toolchain_libs = [dep.name for dep in attr_deps_haskell_toolchain_libraries(ctx)]
+
+    haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
+        ctx,
+        LinkStyle("shared"),
+        enable_profiling = False,
+    )
+
     dyn_module_tsets = ctx.actions.dynamic_output_new(_dynamic_do_compile(
         incremental = incremental,
         md_file = md_file,
@@ -1293,6 +1300,9 @@ def compile(
             compiler_flags = ctx.attrs.compiler_flags,
             deps = ctx.attrs.deps,
             direct_deps_info = direct_deps_info,
+            # though this is redundant. for now let's pass them.
+            direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
+            haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
             enable_haddock = enable_haddock,
             enable_profiling = enable_profiling,
             external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
