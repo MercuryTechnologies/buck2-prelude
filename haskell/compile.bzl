@@ -933,14 +933,6 @@ def _compile_incr(
             is_haskell_binary = arg.is_haskell_binary,
         )
 
-def _dynamic_get_module_tsets_impl(actions) -> list[Provider]:
-    return []
-
-_dynamic_get_module_tsets = dynamic_actions(
-    impl = _dynamic_get_module_tsets_impl,
-    attrs = {},
-)
-
 def compile_args(
         actions,
         haskell_toolchain,
@@ -1055,19 +1047,47 @@ def compile_args(
     )
 
 def _make_module_tset_non_incr(
-        actions) -> CompiledModuleTSet:
-    module_tset = actions.tset(
+        actions: AnalysisActions,
+        module: _Module,
+        package_deps: dict[str, list[str]],
+        toolchain_deps_by_name: dict[str, None],
+        direct_deps_by_name: dict[str, typing.Any],
+        ) -> CompiledModuleTSet:
+
+    toolchain_deps = []
+    library_deps = []
+
+    exposed_package_modules = []
+    exposed_package_dbs = []
+
+    for dep_pkgname, dep_modules in package_deps.items():
+        if dep_pkgname in toolchain_deps_by_name:
+            toolchain_deps.append(dep_pkgname)
+        elif dep_pkgname in direct_deps_by_name:
+            library_deps.append(dep_pkgname)
+            exposed_package_dbs.append(direct_deps_by_name[dep_pkgname][0])
+            for dep_modname in dep_modules:
+                exposed_package_modules.append(direct_deps_by_name[dep_pkgname][1].providers[DynamicCompileResultInfo].modules[dep_modname])
+        else:
+            fail("Unknown library dependency '{}'. Add the library to the `deps` attribute".format(dep_pkgname))
+
+   # Transitive module dependencies from other packages.
+    cross_package_modules = actions.tset(
         CompiledModuleTSet,
-        value = CompiledModuleInfo(
-            abi = None,
-            interfaces = [],
-            hie_files = [],
-            db_deps = [],
-        ),
-        children = [],
+        children = exposed_package_modules,
     )
 
-    return module_tset
+    module_tsets = actions.tset(
+        CompiledModuleTSet,
+        value = CompiledModuleInfo(
+            abi = module.hash,
+            interfaces = module.interfaces,
+            hie_files = module.hie_files,
+            db_deps = exposed_package_dbs,
+        ),
+        children = [cross_package_modules],
+    )
+    return module_tsets
 
 # Compile in one step all the context's sources
 def _compile_non_incr(
@@ -1123,12 +1143,22 @@ def _compile_non_incr(
 
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
+    compile_cmd_hidden = []
+
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
-        module_tsets[module_name] = _make_module_tset_non_incr(actions)
+        module_tsets[module_name] = _make_module_tset_non_incr(
+            actions,
+            module = module,
+            package_deps = package_deps.get(module_name, {}),
+            toolchain_deps_by_name = arg.toolchain_deps_by_name,
+            direct_deps_by_name = direct_deps_by_name,
+        )
+        for deps in module_tsets[module_name].children:
+            compile_cmd_hidden.append(deps.project_as_args("interfaces"))
 
     actions.run(
-        compile_cmd,
+        cmd_args(compile_cmd, hidden = compile_cmd_hidden),
         category = "haskell_compile_" + artifact_suffix.replace("-", "_"),
         # We can't use no_outputs_cleanup because GHC's recompilation checking
         # is based on file timestamps, and Buck doesn't maintain timestamps when
