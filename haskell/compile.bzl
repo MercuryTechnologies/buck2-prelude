@@ -214,13 +214,6 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
 
-    if arg.incremental:
-        use_empty_lib = True
-        for_deps = True
-    else:
-        use_empty_lib = False
-        for_deps = False
-
     packages_info = get_packages_info(
         actions,
         arg.deps,
@@ -230,8 +223,8 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         LinkStyle("shared"),
         specify_pkg_version = False,
         enable_profiling = False,
-        use_empty_lib = use_empty_lib,
-        for_deps = for_deps,
+        use_empty_lib = True,
+        for_deps = False,
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
