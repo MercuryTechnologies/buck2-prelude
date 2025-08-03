@@ -939,6 +939,7 @@ def compile_args(
         enable_profiling: bool,
         direct_deps_link_info,
         haskell_direct_deps_lib_infos,
+        extra_libraries,
         package_env_args: cmd_args,
         target_deps_args: cmd_args,
         pkgname = None,
@@ -950,6 +951,22 @@ def compile_args(
     # be parsed when inside an argsfile.
     compile_cmd.add(compiler_flags)
 
+    # extra-libraries
+    extra_libs = [
+        lib[NativeToolchainLibrary]
+        for lib in extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
+    for l in extra_libs:
+        compile_cmd.add(l.lib_path)
+        compile_cmd.add("-l{}".format(l.name))
+
+    compile_cmd.add("-fbyte-code-and-object-code")
+    compile_cmd.add("-fprefer-byte-code")
+    compile_cmd.add("-j")
+
+    ####
+
     compile_args = cmd_args()
     compile_args.add("-no-link", "-i")
 
@@ -958,10 +975,6 @@ def compile_args(
 
     if enable_profiling:
         compile_args.add("-prof")
-
-    compile_args.add("-fbyte-code-and-object-code")
-    compile_args.add("-fprefer-byte-code")
-    compile_args.add("-j")
 
     if link_style == LinkStyle("shared"):
         compile_args.add("-dynamic", "-fPIC")
@@ -1111,6 +1124,7 @@ def _compile_non_incr(
         link_style = link_style,
         direct_deps_link_info = arg.direct_deps_link_info,
         haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
+        extra_libraries = arg.extra_libraries,
         enable_profiling = enable_profiling,
         package_env_args = common_args.package_env_args,
         target_deps_args = common_args.target_deps_args,
