@@ -17,6 +17,10 @@ load(
     "link_options",
 )
 load(
+    "@prelude//cxx:linker.bzl",
+    "get_rpath_origin",
+)
+load(
     "@prelude//haskell:compile.bzl",
     "PackagesInfo",
     "get_packages_info",
@@ -64,10 +68,6 @@ load(
 )
 load("@prelude//linking:types.bzl", "Linkage")
 load(
-    "@prelude//cxx:linker.bzl",
-    "get_rpath_origin",
-)
-load(
     "@prelude//utils:graph_utils.bzl",
     "depth_first_traversal",
     "depth_first_traversal_by",
@@ -109,8 +109,13 @@ def _write_final_ghci_script(
         [
             paths.normalize(
                 paths.join(
-                    paths.relativize(str(ctx.label.path), "fbcode"),
-                    s,
+                    # Make `src` paths relative to `root`.
+                    # This is a dirty hack and prevents you from having sources
+                    # in any cell other than `root`.
+                    #
+                    # It also, to be honest, doesn't seem to actually do anything?
+                    paths.relativize(str(label.path), "root"),
+                    s if isinstance(s, str) else s.short_path,
                 ),
             )
             for s in ctx.attrs.srcs
@@ -314,14 +319,14 @@ def _build_haskell_omnibus_so(ctx: AnalysisContext) -> HaskellOmnibusData:
     soname = "libghci_dependencies.so"
     extra_ldflags = [
         "-rpath",
-        "{}/{}".format(get_rpath_origin(linker_info.type), so_symlinks_root_path)
+        "{}/{}".format(get_rpath_origin(linker_info.type), so_symlinks_root_path),
     ]
     link_result = cxx_link_shared_library(
         ctx,
         soname,
         opts = link_options(
             links = [
-                LinkArgs(flags = cmd_args(cmd_args(extra_ldflags, delimiter=","), format="-Wl,{}")),
+                LinkArgs(flags = cmd_args(cmd_args(extra_ldflags, delimiter = ","), format = "-Wl,{}")),
                 LinkArgs(infos = body_link_infos.values()),
                 LinkArgs(infos = tp_deps_shared_link_infos.values()),
             ],
@@ -757,7 +762,7 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
     )
     ghci_bin_dep = ctx.attrs.ghci_bin_dep.get(RunInfo)
     hidden_dep = [ghci_bin_dep] if ghci_bin_dep else []
-    run = cmd_args(final_ghci_script, hidden=hidden_dep + outputs)
+    run = cmd_args(final_ghci_script, hidden = hidden_dep + outputs)
 
     return [
         DefaultInfo(default_outputs = [root_output_dir]),
