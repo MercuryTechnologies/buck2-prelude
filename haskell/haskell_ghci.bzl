@@ -31,6 +31,10 @@ load(
     "HaskellLibraryProvider",
 )
 load(
+    "@prelude//haskell:link_info.bzl",
+    "HaskellLinkInfo",
+)
+load(
     "@prelude//haskell:toolchain.bzl",
     "HaskellToolchainInfo",
 )
@@ -94,7 +98,9 @@ HaskellOmnibusData = record(
 )
 
 def _write_final_ghci_script(
-        ctx: AnalysisContext,
+        *,
+        output: OutputArtifact,
+        actions: AnalysisActions,
         omnibus_data: HaskellOmnibusData,
         packages_info: PackagesInfo,
         packagedb_args: cmd_args,
@@ -104,7 +110,10 @@ def _write_final_ghci_script(
         ghci_bin: Artifact,
         haskell_toolchain: HaskellToolchainInfo,
         ghci_script_template: Artifact,
-        enable_profiling: bool) -> Artifact:
+        enable_profiling: bool,
+        label: Label,
+        srcs: list[typing.Any],
+        extra_compiler_flags: list[str]):
     srcs = " ".join(
         [
             paths.normalize(
@@ -118,7 +127,7 @@ def _write_final_ghci_script(
                     s if isinstance(s, str) else s.short_path,
                 ),
             )
-            for s in ctx.attrs.srcs
+            for s in srcs
         ],
     )
 
@@ -141,11 +150,12 @@ def _write_final_ghci_script(
             "-hisuf p_hi",
         ])
 
-    compiler_flags.add(ctx.attrs.compiler_flags)
+    compiler_flags.add(extra_compiler_flags)
     omnibus_so = omnibus_data.omnibus
 
-    final_ghci_script = _replace_macros_in_script_template(
-        ctx,
+    _replace_macros_in_script_template(
+        actions = actions,
+        output = output,
         script_template = ghci_script_template,
         haskell_toolchain = haskell_toolchain,
         ghci_bin = ghci_bin,
@@ -157,10 +167,7 @@ def _write_final_ghci_script(
         squashed_so = omnibus_so,
         compiler_flags = compiler_flags,
         srcs = srcs,
-        output_name = ctx.label.name,
     )
-
-    return final_ghci_script
 
 def _build_haskell_omnibus_so(ctx: AnalysisContext) -> HaskellOmnibusData:
     link_style = LinkStyle("static_pic")
@@ -351,7 +358,9 @@ def _get_default_output(dependency: Dependency | None) -> Artifact | None:
 # Use the script_template_processor.py script to generate a script from a
 # script template.
 def _replace_macros_in_script_template(
-        ctx: AnalysisContext,
+        actions: AnalysisActions,
+        output: OutputArtifact,
+        *,
         script_template: Artifact,
         haskell_toolchain: HaskellToolchainInfo,
         # Optional artifacts
@@ -366,9 +375,8 @@ def _replace_macros_in_script_template(
         compiler_flags: [cmd_args, None] = None,
         # Optional string args
         srcs: [str, None] = None,
-        output_name: [str, None] = None,
         ghci_iserv_path: [Artifact, None] = None,
-        preload_libs: [str, None] = None) -> Artifact:
+        preload_libs: [str, None] = None):
     toolchain_paths = {
         BINUTILS_PATH: haskell_toolchain.ghci_binutils_path,
         GHCI_LIB_PATH: _get_default_output(haskell_toolchain.ghci_lib_path),
@@ -382,9 +390,6 @@ def _replace_macros_in_script_template(
     if ghci_bin != None:
         toolchain_paths[USER_GHCI_PATH] = ghci_bin.short_path
 
-    final_script = ctx.actions.declare_output(
-        script_template.basename if not output_name else output_name,
-    )
     script_template_processor = haskell_toolchain.script_template_processor[RunInfo]
 
     replace_cmd = cmd_args(script_template_processor)
@@ -394,12 +399,12 @@ def _replace_macros_in_script_template(
             replace_cmd.add(cmd_args(path, format = "--{}={{}}".format(name)))
 
     replace_cmd.add(cmd_args(
-        final_script.as_output(),
+        output,
         format = "--output={}",
     ))
 
     replace_cmd.add(cmd_args(
-        ctx.label.name,
+        name,
         format = "--target_name={}",
     ))
 
@@ -446,15 +451,13 @@ def _replace_macros_in_script_template(
                 format = flag + "={}",
             ))
 
-    ctx.actions.run(
+    actions.run(
         replace_cmd,
         category = "replace_template_{}".format(
             script_template.basename.replace("-", "_"),
         ),
         local_only = True,
     )
-
-    return final_script
 
 def _write_iserv_script(
         ctx: AnalysisContext,
@@ -483,10 +486,11 @@ def _write_iserv_script(
     if enable_profiling:
         iserv_script_name += "-prof"
 
-    iserv_script = _replace_macros_in_script_template(
-        ctx,
+    iserv_script = ctx.actions.declare_output(iserv_script_name)
+    _replace_macros_in_script_template(
+        output = iserv_script.as_output(),
+        actions = ctx.actions,
         script_template = ghci_iserv_template,
-        output_name = iserv_script_name,
         haskell_toolchain = haskell_toolchain,
         ghci_iserv_path = _get_default_output(ghci_iserv_path),
         preload_libs = preload_libs,
@@ -622,58 +626,71 @@ def _write_start_ghci(
     else:
         ctx.actions.copy_file(script_file, header_ghci)
 
-def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
-    enable_profiling = ctx.attrs.enable_profiling
+# Is this good? Do you like this?
+_DynamicHaskellGhciArgs = record(
+    label = Label,
+    deps = list[Dependency],
+    extra_script_templates = list[Artifact],
+    direct_deps_link_info = list[HaskellLinkInfo],
+    haskell_toolchain = HaskellToolchainInfo,
+    haskell_direct_deps_lib_infos = list[HaskellLibraryInfo],
+    link_style = LinkStyle,
+    specify_pkg_version = bool,
+    enable_profiling = bool,
+    use_empty_lib = bool,
+    for_deps = bool,
+    ghci_bin = Artifact,
+    ghci_bin_dep = RunInfo | None,
+    omnibus_data = HaskellOmnibusData,
+    # Sources are usually `str` but sometimes a mysterious `source` type that I
+    # do not appear able to access!
+    srcs = list[typing.Any],
+    compiler_flags = list[str],
+    iserv_script = Artifact,
+    start_ghci_file = Artifact,
+    preload_deps_info = GHCiPreloadDepsInfo,
+)
 
-    start_ghci_file = ctx.actions.declare_output("start.ghci")
-    _write_start_ghci(ctx, start_ghci_file, enable_profiling)
-
-    ghci_bin = ctx.actions.declare_output(ctx.attrs.name + ".bin/ghci")
-    _symlink_ghci_binary(ctx, ghci_bin)
-
-    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
-    preload_deps_info = _build_preload_deps_root(ctx, haskell_toolchain)
-
-    ghci_script_template = haskell_toolchain.ghci_script_template
+def _dynamic_haskell_ghci_impl(
+        *,
+        actions: AnalysisActions,
+        pkg_deps: ResolvedDynamicValue | None,
+        args: _DynamicHaskellGhciArgs,
+        output: OutputArtifact) -> list[Provider]:
+    ghci_script_template = args.haskell_toolchain.ghci_script_template
 
     if (not ghci_script_template):
         fail("ghci_script_template missing in haskell_toolchain")
 
-    iserv_script = _write_iserv_script(
-        ctx,
-        preload_deps_info,
-        haskell_toolchain,
-        enable_profiling,
-    )
-
-    link_style = LinkStyle("shared")
-    #link_style = LinkStyle("static_pic")
-
-    haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
-        ctx,
-        link_style,
-        enable_profiling,
-    )
-
     packages_info = get_packages_info(
-        actions = ctx.actions,
-        deps = [],
-        direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
-        haskell_toolchain = haskell_toolchain,
-        haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
-        link_style = link_style,
-        specify_pkg_version = True,
-        enable_profiling = enable_profiling,
-        use_empty_lib = False,
-        pkg_deps = None,
+        actions = actions,
+        deps = args.deps,
+        direct_deps_link_info = args.direct_deps_link_info,
+        haskell_toolchain = args.haskell_toolchain,
+        haskell_direct_deps_lib_infos = args.haskell_direct_deps_lib_infos,
+        link_style = args.link_style,
+        specify_pkg_version = args.specify_pkg_version,
+        enable_profiling = args.enable_profiling,
+        use_empty_lib = args.use_empty_lib,
+        pkg_deps = pkg_deps,
+        for_deps = args.for_deps,
     )
+
+    ghci_script = actions.declare_output("ghci_script")
 
     # Create package db symlinks
     package_symlinks = []
 
-    package_symlinks_root = ctx.label.name + ".packages"
+    package_symlinks_root = args.label.name + ".packages"
 
     packagedb_args = cmd_args(delimiter = " ")
+    packagedb_args.add(
+        packages_info.packagedb_args.relative_to(
+            ghci_script,
+            parent = 1,
+        ),
+    )
+
     prebuilt_packagedb_args_set = {}
 
     for lib in packages_info.transitive_deps.traverse():
@@ -689,14 +706,14 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
             }
 
             for prof, import_dir in lib.import_dirs.items():
-                artifact_suffix = get_artifact_suffix(link_style, prof)
+                artifact_suffix = get_artifact_suffix(args.link_style, prof)
                 for imp in import_dir:
                     lib_symlinks["mod-" + artifact_suffix + "/" + imp.short_path] = imp
 
             for o in lib.libs:
                 lib_symlinks[o.short_path] = o
 
-            symlinked_things = ctx.actions.symlinked_dir(
+            symlinked_things = actions.symlinked_dir(
                 lib_symlinks_root,
                 lib_symlinks,
             )
@@ -712,42 +729,46 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
     prebuilt_packagedb_args = cmd_args(prebuilt_packagedb_args_set.keys(), delimiter = " ")
 
     script_templates = []
-    for script_template in ctx.attrs.extra_script_templates:
-        final_script = _replace_macros_in_script_template(
-            ctx,
+    for script_template in args.extra_script_templates:
+        final_script = actions.declare_output(args.label.name)
+        _replace_macros_in_script_template(
+            actions = actions,
+            output = final_script.as_output(),
             script_template = script_template,
-            haskell_toolchain = haskell_toolchain,
-            ghci_bin = ghci_bin,
+            haskell_toolchain = args.haskell_toolchain,
+            ghci_bin = args.ghci_bin,
             exposed_package_args = packages_info.exposed_package_args,
             packagedb_args = packagedb_args,
             prebuilt_packagedb_args = prebuilt_packagedb_args,
         )
         script_templates.append(final_script)
 
-    omnibus_data = _build_haskell_omnibus_so(ctx)
-
-    final_ghci_script = _write_final_ghci_script(
-        ctx,
-        omnibus_data,
-        packages_info,
-        packagedb_args,
-        prebuilt_packagedb_args,
-        iserv_script,
-        start_ghci_file,
-        ghci_bin,
-        haskell_toolchain,
-        ghci_script_template,
-        enable_profiling,
+    _write_final_ghci_script(
+        actions = actions,
+        output = ghci_script.as_output(),
+        omnibus_data = args.omnibus_data,
+        packages_info = packages_info,
+        packagedb_args = packagedb_args,
+        prebuilt_packagedb_args = prebuilt_packagedb_args,
+        iserv_script = args.iserv_script,
+        start_ghci_file = args.start_ghci_file,
+        ghci_bin = args.ghci_bin,
+        haskell_toolchain = args.haskell_toolchain,
+        ghci_script_template = ghci_script_template,
+        enable_profiling = args.enable_profiling,
+        label = args.label,
+        srcs = args.srcs,
+        extra_compiler_flags = args.compiler_flags,
     )
 
     outputs = [
-        start_ghci_file,
-        ghci_bin,
-        preload_deps_info.preload_deps_root,
-        iserv_script,
-        omnibus_data.omnibus,
-        omnibus_data.so_symlinks_root,
-        final_ghci_script,
+        args.start_ghci_file,
+        args.ghci_bin,
+        args.preload_deps_info.preload_deps_root,
+        args.iserv_script,
+        args.omnibus_data.omnibus,
+        args.omnibus_data.so_symlinks_root,
+        ghci_script,
     ]
     outputs.extend(package_symlinks)
     outputs.extend(script_templates)
@@ -756,13 +777,89 @@ def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
     # should output a directory containing symlinks to all scripts and resources
     # (e.g. shared objects, package configs)
     output_artifacts = {o.short_path: o for o in outputs}
-    root_output_dir = ctx.actions.symlinked_dir(
-        "__{}__".format(ctx.label.name),
+    actions.symlinked_dir(
+        output,
         output_artifacts,
     )
+
+    return []
+
+_dynamic_haskell_ghci = dynamic_actions(
+    impl = _dynamic_haskell_ghci_impl,
+    attrs = {
+        "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
+        "args": dynattrs.value(_DynamicHaskellGhciArgs),
+        "output": dynattrs.output(),
+    },
+)
+
+def haskell_ghci_impl(ctx: AnalysisContext) -> list[Provider]:
+    enable_profiling = ctx.attrs.enable_profiling
+
+    start_ghci_file = ctx.actions.declare_output("start.ghci")
+    _write_start_ghci(ctx, start_ghci_file, enable_profiling)
+
+    ghci_bin = ctx.actions.declare_output(ctx.attrs.name + ".bin/ghci")
+    _symlink_ghci_binary(ctx, ghci_bin)
+
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    preload_deps_info = _build_preload_deps_root(ctx, haskell_toolchain)
+
+    iserv_script = _write_iserv_script(
+        ctx,
+        preload_deps_info,
+        haskell_toolchain,
+        enable_profiling,
+    )
+
+    link_style = LinkStyle("shared")
+
+    haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
+        ctx,
+        link_style,
+        enable_profiling,
+    )
+
+    omnibus_data = _build_haskell_omnibus_so(ctx)
+
+    root_output_dir = ctx.actions.declare_output("ghci_env", dir = True)
+
+    # I guess we just discard the `DynamicValue` returned here and it all works
+    # out fine?
+    dynamic_value = ctx.actions.dynamic_output_new(_dynamic_haskell_ghci(
+        pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
+        output = root_output_dir.as_output(),
+        args = _DynamicHaskellGhciArgs(
+            label = ctx.label,
+            deps = ctx.attrs.deps,
+            extra_script_templates = ctx.attrs.extra_script_templates,
+            direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
+            haskell_toolchain = haskell_toolchain,
+            haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
+            link_style = link_style,
+            specify_pkg_version = True,
+            enable_profiling = enable_profiling,
+            use_empty_lib = False,
+            for_deps = False,
+            ghci_bin = ghci_bin,
+            ghci_bin_dep = ctx.attrs.ghci_bin_dep.get(RunInfo),
+            omnibus_data = omnibus_data,
+            srcs = ctx.attrs.srcs,
+            compiler_flags = ctx.attrs.compiler_flags,
+            iserv_script = iserv_script,
+            start_ghci_file = start_ghci_file,
+            preload_deps_info = preload_deps_info,
+        ),
+    ))
+
     ghci_bin_dep = ctx.attrs.ghci_bin_dep.get(RunInfo)
-    hidden_dep = [ghci_bin_dep] if ghci_bin_dep else []
-    run = cmd_args(final_ghci_script, hidden = hidden_dep + outputs)
+    run = cmd_args(
+        root_output_dir,
+        # This just has to kinda magically line up with what
+        # `_dynamic_haskell_ghci` does.
+        format = "{}/ghci_script",
+        hidden = ([ghci_bin_dep] if ghci_bin_dep else []) + [root_output_dir],
+    )
 
     return [
         DefaultInfo(default_outputs = [root_output_dir]),
