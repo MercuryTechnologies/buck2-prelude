@@ -698,7 +698,8 @@ def _compile_module(
 
     compile_args_for_file.add(module.source)
 
-    abi_tag = actions.artifact_tag()
+    interface_tag = actions.artifact_tag()  # tag for all hi files (these are never marked as used)
+    hash_tag = actions.artifact_tag()  # tag for ABI .hash files
 
     toolchain_deps = []
     library_deps = []
@@ -730,11 +731,11 @@ def _compile_module(
         CompiledModuleTSet,
         children = [cross_package_modules] + this_package_modules,
     )
+    tagged_hash_files = hash_tag.tag_artifacts(dependency_modules.project_as_args("abi"))
 
-    compile_cmd_args = [common_args.command]
+    compile_cmd_args = [common_args.command, cmd_args(tagged_hash_files, prepend = "--abi")]
     compile_cmd_hidden = [
-        abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
-        dependency_modules.project_as_args("abi"),
+        interface_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
     ]
     if src_envs:
         for k, v in src_envs.items():
@@ -792,11 +793,16 @@ def _compile_module(
 
     dep_file = actions.declare_output("dep-{}_{}".format(module_name, artifact_suffix)).as_output()
 
-    tagged_dep_file = abi_tag.tag_artifacts(dep_file)
+    tagged_dep_file = interface_tag.tag_artifacts(dep_file)
 
     compile_cmd.add("--buck2-dep", tagged_dep_file)
 
-    hash = actions.declare_output(module_name + ".hash")
+    abi_dep_file = actions.declare_output("used-abi-{}_{}".format(module_name, artifact_suffix)).as_output()
+    tagged_abi_dep_file = hash_tag.tag_artifacts(abi_dep_file)
+
+    compile_cmd.add("--abi-dep", tagged_abi_dep_file)
+
+    hash = actions.declare_output(pkgname + "_" + module_name + ".hash")
     compile_cmd.add("--abi-out", hash.as_output())
 
     worker_args = dict() if worker == None else dict(exe = WorkerRunInfo(worker = worker))
@@ -804,7 +810,8 @@ def _compile_module(
     actions.run(
         compile_cmd, category = "haskell_compile_" + artifact_suffix.replace("-", "_"), identifier = module_name,
         dep_files = {
-            "abi": abi_tag,
+            "hi": interface_tag,
+            "hash": hash_tag,
             "packagedb": packagedb_tag,
         },
         # explicit turn this on for local_only actions to upload their results.
