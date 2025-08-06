@@ -117,17 +117,16 @@ def obtain_buildplan(args, paths):
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
-        ghc_depends = run_ghc_depends(args.cwd, args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
-        buildplan = obtain_buildplan(args, paths)["build_plan"]
+        buildplan = obtain_buildplan(args, aux_paths)
     else:
         # FIXME
+        sys.exit("FIXME")
         ghc_depends = load_toolchain_packages(args.build_plan)
     th_modules = determine_th_modules(buildplan)
 
     module_mapping = determine_module_mapping(buildplan, args.source_prefix)
     module_graph = determine_module_graph(buildplan)
-    # TODO(cb) determine package deps from build plan
-    package_deps = determine_package_deps(ghc_depends)
+    package_deps = determine_package_deps(buildplan)
     return {
         "th_modules": th_modules,
         "module_mapping": module_mapping,
@@ -159,6 +158,8 @@ def determine_th_modules(buildplan):
     result = []
 
     def handle_node(node):
+        if "compile-or-link" not in node:
+            return
         if node["compile-or-link"] == "link":
             return
         if node["uses_th"]:
@@ -181,7 +182,11 @@ def determine_module_mapping(buildplan, source_prefix):
     result = {}
 
     def handle_node(node):
+        if "compile-or-link" not in node:
+            return
         if node["compile-or-link"] == "link":
+            return
+        if node.get("external", False):
             return
         modname = module_name(node)
         appname = apparent_name(node, source_prefix)
@@ -206,11 +211,16 @@ def determine_module_graph(buildplan):
     module_deps = {}
 
     def handle_node(node):
+        if "compile-or-link" not in node:
+            return
         if node["compile-or-link"] == "link":
+            return
+        if node.get("external", False):
             return
         module_deps[module_name(node)] = set(
             module_name(dep)
             for dep in node["dependencies"]
+            if not dep.get("external", False)
         )
 
     for module in buildplan:
@@ -227,19 +237,36 @@ def determine_module_graph(buildplan):
     return module_deps
 
 
-def determine_package_deps(ghc_depends):
+def determine_package_deps(buildplan):
     package_deps = {}
 
-    for modname, description in ghc_depends.items():
-        for pkgdep in description.get("packages", {}):
-            pkgname = pkgdep.get("name")
-            package_deps.setdefault(modname, {})[pkgname] = pkgdep.get("modules", [])
+    def unit_id_to_package(unit_id):
+        return unit_id.split("-", 1)[0]
 
-        boot_description = description.get("boot", None)
-        if boot_description != None:
-            for pkgdep in boot_description.get("packages", {}):
-                pkgname = pkgdep.get("name")
-                package_deps.setdefault(modname + "-boot", {})[pkgname] = pkgdep.get("modules", [])
+    def handle_node(node):
+        if "compile-or-link" not in node:
+            return
+        if node["compile-or-link"] == "link":
+            return
+        if node.get("external", False):
+            return
+        modname = module_name(node)
+        package_deps[modname] = {
+            unit_id_to_package(dep["unit_id"]): []
+            for dep in node["dependencies"]
+            if dep.get("external", False)
+        }
+
+    for module in buildplan:
+        module_type = module["type"]
+
+        if module_type == "single-module":
+            handle_node(module["node"])
+        elif module_type == "resolved-cycle":
+            for node in module["nodes"]:
+                handle_node(node)
+        else:
+            raise Error("unknown module type: " + module_type)
 
     return package_deps
 
