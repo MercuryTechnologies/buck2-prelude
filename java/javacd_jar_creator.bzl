@@ -359,7 +359,7 @@ def _define_javacd_action(
     proto_dep_files_placeholder = declare_prefixed_output(actions, actions_identifier, "jar_command_for_dep_files.proto.json", uses_experimental_content_based_path_hashing)
 
     proto_with_inputs = classpath_jars_tag.tag_artifacts(actions.write_json(proto, java_build_command))
-    proto_with_inputs_for_dep_files = actions.write_json(proto_dep_files_placeholder, java_build_command, with_inputs = True, use_dep_files_placeholder_for_content_based_paths = True)
+    proto_with_inputs_for_dep_files = actions.write_json(proto_dep_files_placeholder, java_build_command, with_inputs = True) #, use_dep_files_placeholder_for_content_based_paths = True)
     args.add(cmd_args(hidden = proto_with_inputs_for_dep_files))
 
     args.add(

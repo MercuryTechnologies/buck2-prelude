@@ -117,11 +117,11 @@ def genrule_impl(ctx: AnalysisContext) -> list[Provider]:
 
 def _declare_output(ctx: AnalysisContext, path: str, content_based: bool) -> Artifact:
     if path == ".":
-        return ctx.actions.declare_output(GENRULE_OUT_DIR, dir = True, uses_experimental_content_based_path_hashing = content_based)
+        return ctx.actions.declare_output(GENRULE_OUT_DIR, dir = True) #, uses_experimental_content_based_path_hashing = content_based)
     elif path.endswith("/"):
-        return ctx.actions.declare_output(GENRULE_OUT_DIR, path[:-1], dir = True, uses_experimental_content_based_path_hashing = content_based)
+        return ctx.actions.declare_output(GENRULE_OUT_DIR, path[:-1], dir = True) #, uses_experimental_content_based_path_hashing = content_based)
     else:
-        return ctx.actions.declare_output(GENRULE_OUT_DIR, path, uses_experimental_content_based_path_hashing = content_based)
+        return ctx.actions.declare_output(GENRULE_OUT_DIR, path) #, uses_experimental_content_based_path_hashing = content_based)
 
 def _project_output(out: Artifact, path: str) -> Artifact:
     if path == ".":
@@ -161,7 +161,7 @@ def process_genrule(
         default_outputs = [out_artifact]
         expect(executable_outs == None, "`executable_outs` should not be set when `out` is set")
     elif outs_attr != None:
-        out_artifact = ctx.actions.declare_output(GENRULE_OUT_DIR, dir = True, uses_experimental_content_based_path_hashing = content_based)
+        out_artifact = ctx.actions.declare_output(GENRULE_OUT_DIR, dir = True) #, uses_experimental_content_based_path_hashing = content_based)
 
         named_outputs = {
             name: [_project_output(out_artifact, path) for path in outputs]
@@ -227,7 +227,7 @@ def process_genrule(
     srcs_artifact = ctx.actions.symlinked_dir(
         "srcs" if not identifier else "{}-srcs".format(identifier),
         symlinks,
-        uses_experimental_content_based_path_hashing = content_based,
+        # uses_experimental_content_based_path_hashing = content_based,
     )
 
     if ctx.attrs.environment_expansion_separator:
@@ -359,7 +359,7 @@ def process_genrule(
         script,
         is_executable = True,
         allow_args = True,
-        uses_experimental_content_based_path_hashing = content_based,
+        # uses_experimental_content_based_path_hashing = content_based,
     )
     if is_windows:
         script_args = ["cmd.exe", "/v:off", "/c", sh_script]

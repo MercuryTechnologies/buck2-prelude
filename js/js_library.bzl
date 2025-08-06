@@ -62,7 +62,7 @@ def _build_js_files(
 
         output_path = ctx.actions.declare_output(
             "transform-out/{}.jsfile".format(identifier),
-            uses_experimental_content_based_path_hashing = True,
+            # uses_experimental_content_based_path_hashing = True,
         )
         job_args = {
             "additionalSources": [{
@@ -83,7 +83,7 @@ def _build_js_files(
         command_args_file = ctx.actions.write_json(
             "{}_command_args".format(identifier),
             job_args,
-            uses_experimental_content_based_path_hashing = True,
+            # uses_experimental_content_based_path_hashing = True,
         )
 
         all_output_paths.append(output_path)
@@ -101,7 +101,7 @@ def _build_js_files(
             identifier = "{}_{}_batch{}".format(ctx.label.name, transform_profile, batch_number),
             category = "transform",
             hidden_artifacts = all_hidden_artifacts[start_index:end_index],
-            uses_experimental_content_based_path_hashing = True,
+            # uses_experimental_content_based_path_hashing = True,
         )
 
     return all_output_paths
@@ -113,7 +113,7 @@ def _build_library_files(
         js_files: list[Artifact]) -> Artifact:
     output_path = ctx.actions.declare_output(
         "library-files-out/{}/library_files".format(transform_profile),
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     job_args = {
@@ -134,7 +134,7 @@ def _build_library_files(
     command_args_file = ctx.actions.write_json(
         "library_files_{}_command_args".format(transform_profile),
         job_args,
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     run_worker_commands(
@@ -144,7 +144,7 @@ def _build_library_files(
         identifier = transform_profile,
         category = "library_files",
         hidden_artifacts = [cmd_args([output_path.as_output()] + js_files)],
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
     return output_path
 
@@ -156,7 +156,7 @@ def _build_js_library(
         js_library_deps: list[Artifact]) -> Artifact:
     output_path = ctx.actions.declare_output(
         "library-dependencies-out/{}.jslib".format(transform_profile),
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
     job_args = {
         "aggregatedSourceFilesFilePath": library_files,
@@ -174,7 +174,7 @@ def _build_js_library(
     command_args_file = ctx.actions.write_json(
         "library_deps_{}_args".format(transform_profile),
         job_args,
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     run_worker_commands(
@@ -195,7 +195,7 @@ def _build_js_library(
 def js_library_impl(ctx: AnalysisContext) -> list[Provider]:
     if ctx.attrs._build_only_native_code:
         sub_targets = {}
-        unused_output = ctx.actions.write("unused.js", [], uses_experimental_content_based_path_hashing = True)
+        unused_output = ctx.actions.write("unused.js", []) #, uses_experimental_content_based_path_hashing = True)
 
         for transform_profile in TRANSFORM_PROFILES:
             sub_targets[transform_profile] = [

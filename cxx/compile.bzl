@@ -692,7 +692,7 @@ def _create_precompile_cmd(
     input_header = ctx.actions.write(
         module_name,
         "",
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     import_stub = ctx.actions.write(
@@ -703,7 +703,7 @@ export
 #endif
 import \"{}\";
 """.format(module_name),
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     symlinked_files = {}
@@ -719,7 +719,7 @@ module "{}" {{
     modulemap_file = ctx.actions.write(
         "module.modulemap" + group_name,
         modulemap_content,
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     src_dir = ctx.actions.symlinked_dir(
@@ -729,7 +729,7 @@ module "{}" {{
             import_name: import_stub,
             "module.modulemap": modulemap_file,
         },
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     args = []
@@ -759,7 +759,7 @@ module "{}" {{
         "{}.header_unit_headers".format(group_name),
         include_args,
         allow_args = True,
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     args.extend([cmd_args(headers_argsfile, format = "@{}")])
@@ -788,7 +788,7 @@ def _precompile_single_cxx(
     module = ctx.actions.declare_output(
         "__pcm_files__",
         filename,
-        uses_experimental_content_based_path_hashing = True,
+        # uses_experimental_content_based_path_hashing = True,
     )
 
     cmd = cmd_args(src_compile_cmd.cxx_compile_cmd.base_compile_cmd)
@@ -805,7 +805,7 @@ def _precompile_single_cxx(
         cmd.add(["-ftime-trace"])
         clang_trace = ctx.actions.declare_output(
             paths.join("__pcm_files__", "{}.json".format(identifier)),
-            uses_experimental_content_based_path_hashing = True,
+            # uses_experimental_content_based_path_hashing = True,
         )
         cmd.add(cmd_args(hidden = clang_trace.as_output()))
 
@@ -1169,7 +1169,7 @@ def _mk_argsfiles(
             filename,
             content,
             allow_args = True,
-            uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+            # uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
         )
         return argsfile
 
@@ -1203,7 +1203,7 @@ def _mk_argsfiles(
             compiler_info_argsfile = ctx.actions.copy_file(
                 filename_prefix + "filtered_toolchain_cxx_args",
                 filtered_info_argsfile,
-                uses_experimental_content_based_path_hashing = True,
+                # uses_experimental_content_based_path_hashing = True,
             )
 
         argsfiles.append(compiler_info_argsfile)
@@ -1323,7 +1323,7 @@ def _mk_argsfiles(
         file_args,
         allow_args = True,
         absolute = is_xcode_argsfile,
-        uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+        # uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
     )
 
     args = create_cmd_args(is_nasm, is_xcode_argsfile, args_list)
@@ -1382,7 +1382,7 @@ def _mk_header_units_argsfile(
         file_name,
         file_args,
         allow_args = True,
-        uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+        # uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
     )
     cmd_form = cmd_args(argsfile, format = "@{}", hidden = file_args)
 

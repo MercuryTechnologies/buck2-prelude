@@ -37,8 +37,8 @@ def filegroup_impl(ctx):
         output = ctx.actions.copied_dir(
             output_name,
             srcs,
-            executable_bit_override = ctx.attrs.executable_bit_override,
-            uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
+            # executable_bit_override = ctx.attrs.executable_bit_override,
+            # uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
         )
     elif ctx.attrs.executable_bit_override != None:
         fail("filegroup does not allow specifying `executable_bit_override` with `copy = False`")
@@ -46,7 +46,7 @@ def filegroup_impl(ctx):
         output = ctx.actions.symlinked_dir(
             output_name,
             srcs,
-            uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
+            # uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
         )
 
     if type(ctx.attrs.srcs) == type([]):

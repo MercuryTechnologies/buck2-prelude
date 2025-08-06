@@ -24,7 +24,7 @@ load("@prelude//java/utils:java_utils.bzl", "declare_prefixed_name")
 load("@prelude//utils:expect.bzl", "expect")
 
 def declare_prefixed_output(actions: AnalysisActions, prefix: [str, None], output: str, uses_experimental_content_based_path_hashing: bool, dir: bool = False) -> Artifact:
-    return actions.declare_output(declare_prefixed_name(output, prefix), dir = dir, uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing)
+    return actions.declare_output(declare_prefixed_name(output, prefix), dir = dir) #, uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing)
 
 # The library and the toolchain can both set a specific abi generation
 # mode. The toolchain's setting is effectively the "highest" form of abi

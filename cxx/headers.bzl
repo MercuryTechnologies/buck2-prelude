@@ -267,7 +267,7 @@ def prepare_headers(
     symlink_dir = ctx.actions.symlinked_dir(
         output_name,
         _normalize_header_srcs(srcs),
-        uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+        #uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
     )
     if header_mode == HeaderMode("symlink_tree_only"):
         return Headers(include_path = cmd_args(symlink_dir), symlink_tree = symlink_dir)
@@ -400,7 +400,7 @@ def _get_debug_prefix_args(ctx: AnalysisContext, header_dir: Artifact) -> [cmd_a
 def _mk_hmap(ctx: AnalysisContext, name: str, headers: dict[str, (Artifact, str)], uses_experimental_content_based_path_hashing: bool = False) -> Artifact:
     output = ctx.actions.declare_output(
         name + ".hmap",
-        uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+        #uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
     )
 
     header_args = cmd_args()
@@ -411,7 +411,7 @@ def _mk_hmap(ctx: AnalysisContext, name: str, headers: dict[str, (Artifact, str)
     hmap_args_file = ctx.actions.write(
         output.basename + ".cxx_hmap_argsfile",
         cmd_args(header_args, quote = "shell"),
-        uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
+        #uses_experimental_content_based_path_hashing = uses_experimental_content_based_path_hashing,
     )
 
     cmd = cmd_args(

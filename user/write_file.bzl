@@ -27,7 +27,7 @@ def _impl(ctx: AnalysisContext):
         ctx.attrs.out,
         content,
         is_executable = ctx.attrs.is_executable,
-        uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
+        #uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
     )
 
     providers = [DefaultInfo(default_output = output)]

@@ -17,8 +17,8 @@ def export_file_impl(ctx: AnalysisContext) -> list[DefaultInfo]:
         output = ctx.actions.copy_file(
             dest,
             ctx.attrs.src,
-            executable_bit_override = ctx.attrs.executable_bit_override,
-            uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
+            #executable_bit_override = ctx.attrs.executable_bit_override,
+            #uses_experimental_content_based_path_hashing = ctx.attrs.uses_experimental_content_based_path_hashing,
         )
     elif ctx.attrs.out != None:
         fail("export_file does not allow specifying `out` without also specifying `mode = 'copy'`")
