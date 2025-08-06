@@ -305,57 +305,6 @@ def run_ghc_buildplan(ghc, ghc_args, sources, aux_paths):
             return json.load(f)
 
 
-def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
-    with tempfile.TemporaryDirectory() as dname:
-        json_fname = os.path.join(dname, "depends.json")
-        make_fname = os.path.join(dname, "depends.make")
-        haskell_sources = list(filter(is_haskell_src, sources))
-        haskell_boot_sources = list(filter (is_haskell_boot, sources))
-        if worker_target_id:
-            worker_args = ["--worker-target-id={}".format(worker_target_id)]
-        else:
-            worker_args = []
-
-        args = [
-            str(ghc.absolute()), "-M", "-include-pkg-deps",
-            # Note: `-outputdir '.'` removes the prefix of all targets:
-            #       backend/src/Foo/Util.<ext> => Foo/Util.<ext>
-            "-outputdir", ".",
-            "-dep-json", json_fname,
-            "-dep-makefile", make_fname,
-        ] + worker_args + ghc_args + haskell_sources + haskell_boot_sources
-
-        args_fname = os.path.join(dname, "ghc-args")
-        with open(args_fname, "w", encoding="utf-8") as args_file:
-            for arg in args:
-                args_file.write(arg)
-                args_file.write("\n")
-
-        args_outer = [str(ghc), "@" + args_fname]
-
-        env = os.environ.copy()
-        path = env.get("PATH", "")
-        env["PATH"] = os.pathsep.join([path] + aux_paths)
-
-        res = subprocess.run(args, env=env, cwd=cwd, capture_output=True)
-        if res.returncode != 0:
-            # Write the GHC command on failure.
-            print(shlex.join(args_outer), file=sys.stderr)
-
-        # Always forward stdout/stderr.
-        # Note, Buck2 swallows stdout on successful builds.
-        # Redirect to stderr to avoid this.
-        sys.stderr.buffer.write(res.stdout)
-        sys.stderr.buffer.write(res.stderr)
-
-        if res.returncode != 0:
-            # Fail if GHC failed.
-            sys.exit(res.returncode)
-
-        with open(json_fname) as f:
-            return json.load(f)
-
-
 def src_to_module_name(x):
     base, _ = os.path.splitext(x)
     return base.replace("/", ".")
