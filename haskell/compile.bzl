@@ -322,7 +322,7 @@ def target_metadata(
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
         output = md_file.as_output(),
         arg = struct(
-            compiler_flags = ctx.attrs.compiler_flags,
+            compiler_flags = haskell_toolchain.compiler_flags + ctx.attrs.compiler_flags,
             deps = ctx.attrs.deps,
             direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
             haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
@@ -525,7 +525,6 @@ def _common_compile_module_args(
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
-    command.add(haskell_toolchain.compiler_flags)
     command.add(compiler_flags)
 
     command.add("-c")
@@ -941,7 +940,7 @@ def compile(
         },
         arg = struct(
             artifact_suffix = artifact_suffix,
-            compiler_flags = ctx.attrs.compiler_flags,
+            compiler_flags = haskell_toolchain.compiler_flags + ctx.attrs.compiler_flags,
             deps = ctx.attrs.deps,
             direct_deps_info = direct_deps_info,
             enable_haddock = enable_haddock,
