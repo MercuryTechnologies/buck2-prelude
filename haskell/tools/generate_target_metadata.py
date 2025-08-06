@@ -210,6 +210,16 @@ def determine_module_mapping(buildplan, source_prefix):
 def determine_module_graph(buildplan):
     module_deps = {}
 
+    modules = [
+        module_name(mod["node"]) for mod in buildplan
+        if mod["type"] == "single-module"
+        if "module_name" in mod["node"]
+    ]
+    reexports = {
+        modname : mod["node"]["reexports"]
+        for mod in buildplan
+        if mod["type"] == "single-module" and (modname := mod["node"].get("module_name"))
+    }
     def handle_node(node):
         if "compile-or-link" not in node:
             return
@@ -217,11 +227,18 @@ def determine_module_graph(buildplan):
             return
         if node.get("external", False):
             return
-        module_deps[module_name(node)] = set(
+        deps = set(
             module_name(dep)
             for dep in node["dependencies"]
             if not dep.get("external", False)
         )
+        deps |= set(
+             reexport
+             for dep in deps
+             for reexport in reexports.get(dep, [])
+             if reexport in modules
+        )
+        module_deps[module_name(node)] = sorted(deps)
 
     for module in buildplan:
         module_type = module["type"]
