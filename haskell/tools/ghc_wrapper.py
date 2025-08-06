@@ -157,11 +157,15 @@ def recompute_abi_hash(ghc, hi_file, abi_out, use_persistent_workers):
     else:
         worker_args = []
 
-    cmd = [ghc, "-v0", "-package-env=-", "--show-iface-abi-hash", hi_file] + worker_args
+    cmd = [ghc, "-v0", "-package-env=-", "--show-iface", hi_file] + worker_args
 
-    hash = subprocess.check_output(cmd, text=True).split(maxsplit=1)[0]
-
-    abi_out.write_text(hash)
+    abi_prefix = "  ABI hash: "
+    for line in subprocess.check_output(cmd, text=True).splitlines():
+        if line.startswith(abi_prefix):
+            hash = line[len(abi_prefix) :]
+            abi_out.write_text(hash)
+            return
+    sys.exit("could not determine ABI hash")
 
 
 if __name__ == "__main__":
