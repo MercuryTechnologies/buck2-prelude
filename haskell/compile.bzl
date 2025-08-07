@@ -231,8 +231,18 @@ def transitive_metadata(actions: AnalysisActions, pkgname: str, packages_info: P
     actions.write_json(dep_units_file, dep_units, with_inputs = True, pretty = True)
     return cmd_args(dep_units_file, prepend = "--dep-units")
 
-def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo) -> cmd_args:
+# Assemble GHC arguments that are specific to a given unit, but not to a module.
+# Used for the metadata step as a basis for the non-worker case and as the full argument list for the worker case.
+# The worker also stores these in the metadata JSON in order to restore the unit state from cache after restarting.
+def unit_args(
+    actions: AnalysisActions,
+    arg: struct,
+    packages_info: PackagesInfo,
+    output: OutputArtifact,
+    enable_th: bool) -> cmd_args:
     package_flag = _package_flag(arg.haskell_toolchain)
+    artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
+
     args = cmd_args(
         "-no-link",
         "-i",
@@ -246,6 +256,31 @@ def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo
     args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
     args.add(arg.compiler_flags)
     args.add("-this-unit-id", arg.pkgname)
+
+    if arg.enable_profiling:
+        args.add("-prof")
+
+    if arg.link_style == LinkStyle("shared"):
+        args.add("-dynamic", "-fPIC")
+    elif arg.link_style == LinkStyle("static_pic"):
+        args.add("-fPIC", "-fexternal-dynamic-refs")
+
+    # Configure all output directories to use e.g. `mod-shared` next to the metadata file (`output`).
+    output_dir = cmd_args(
+        [cmd_args(output, ignore_artifacts = True, parent = 1), "mod-" + artifact_suffix],
+        delimiter = "/",
+    )
+    for dir in ["o", "hi", "hie", "dump"]:
+        args.add("-{}dir".format(dir), output_dir)
+
+    args.add("-fbyte-code-and-object-code")
+
+    if enable_th:
+        args.add("-fprefer-byte-code")
+        args.add("-fpackage-db-byte-code")
+
+    osuf, hisuf = output_extensions(arg.link_style, arg.enable_profiling)
+    args.add("-osuf", osuf, "-hisuf", hisuf)
     return args
 
 def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
@@ -266,7 +301,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
-    ghc_args = unit_args(actions, arg, packages_info)
+    ghc_args = unit_args(actions, arg, packages_info, output, enable_th = true)
 
     md_args = cmd_args()
     md_args.add(cmd_args(
@@ -295,7 +330,6 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         ghc_args.add("-include-pkg-deps")
         ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
         ghc_args.add("-dep-makefile", cmd_args(makefile, ignore_artifacts = True))
-        ghc_args.add("-outputdir", ".")
         ghc_args.add(cmd_args(arg.sources))
 
         ghc_args_file = argfile(
@@ -531,6 +565,7 @@ def get_packages_info(
 CommonCompileModuleArgs = record(
     pkgname = field(str),
     command = field(cmd_args),
+    module_specific_args = field(cmd_args),
     args_for_file = field(cmd_args),
     package_env_args = field(cmd_args),
     target_deps_args = field(cmd_args),
@@ -594,6 +629,9 @@ def _common_compile_module_args(
         toolchain_deps_by_name,
         direct_deps_by_name,
         pkgname: str) -> CommonCompileModuleArgs:
+    # These arguments are concerned with a module's output paths, as well as link style and profiling.
+    module_specific_args = cmd_args()
+
     command = cmd_args(ghc_wrapper)
     command.add("--ghc", haskell_toolchain.compiler)
     command.add("--ghc-dir", haskell_toolchain.ghc_dir)
@@ -630,15 +668,15 @@ def _common_compile_module_args(
     args_for_file.add("-fwrite-ide-info")
 
     if enable_profiling:
-        args_for_file.add("-prof")
+        module_specific_args.add("-prof")
 
     if link_style == LinkStyle("shared"):
-        args_for_file.add("-dynamic", "-fPIC")
+        module_specific_args.add("-dynamic", "-fPIC")
     elif link_style == LinkStyle("static_pic"):
-        args_for_file.add("-fPIC", "-fexternal-dynamic-refs")
+        module_specific_args.add("-fPIC", "-fexternal-dynamic-refs")
 
     osuf, hisuf = output_extensions(link_style, enable_profiling)
-    args_for_file.add("-osuf", osuf, "-hisuf", hisuf)
+    module_specific_args.add("-osuf", osuf, "-hisuf", hisuf)
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
@@ -707,6 +745,7 @@ def _common_compile_module_args(
     return CommonCompileModuleArgs(
         pkgname = pkgname,
         command = command,
+        module_specific_args = module_specific_args,
         args_for_file = args_for_file,
         package_env_args = package_env_args,
         target_deps_args = target_deps_args,
@@ -738,49 +777,52 @@ def _compile_module(
         worker: None | WorkerInfo,
         allow_worker: bool,
         is_haskell_binary: bool) -> CompiledModuleTSet:
+    # These arguments are concerned with a module's output paths, as well as link style and profiling.
+    module_specific_args = cmd_args(common_args.module_specific_args, hidden = [])
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
-    packagedb_tag = actions.artifact_tag()
-    compile_args_for_file.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
+    if not (allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make):
+        packagedb_tag = actions.artifact_tag()
+        compile_args_for_file.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
 
-    dep_file = actions.declare_output(".".join([
-        label.name,
-        module_name or "pkg",
-        "package-db",
-        output_extensions(link_style, enable_profiling)[1],
-        "dep",
-    ])).as_output()
-    tagged_dep_file = packagedb_tag.tag_artifacts(dep_file)
-    compile_args_for_file.add("--buck2-packagedb-dep", tagged_dep_file)
+        dep_file = actions.declare_output(".".join([
+            label.name,
+            module_name or "pkg",
+            "package-db",
+            output_extensions(link_style, enable_profiling)[1],
+            "dep",
+        ])).as_output()
+        tagged_dep_file = packagedb_tag.tag_artifacts(dep_file)
+        compile_args_for_file.add("--buck2-packagedb-dep", tagged_dep_file)
 
     objects = [outputs[obj] for obj in module.objects]
     his = [outputs[hi] for hi in module.interfaces]
     hies = [outputs[hie] for hie in module.hie_files]
 
-    compile_args_for_file.add("-o", objects[0])
+    module_specific_args.add("-o", objects[0])
     if not hies:
-        compile_args_for_file.add(cmd_args("-ohi", his[0]))
+        module_specific_args.add(cmd_args("-ohi", his[0]))
     else:
-        compile_args_for_file.add(cmd_args("-ohi", his[0], hidden = [hies[0]]))
+        module_specific_args.add(cmd_args("-ohi", his[0], hidden = [hies[0]]))
 
     # Set the output directories. We do not use the -outputdir flag, but set the directories individually.
     # Note, the -outputdir option is shorthand for the combination of -odir, -hidir, -hiedir, -stubdir and -dumpdir.
     # But setting -hidir effectively disables the use of the search path to look up interface files,
     # as ghc exclusively looks in that directory when it is set.
     for dir in ["o", "hie", "dump"]:
-        compile_args_for_file.add(
+        module_specific_args.add(
             "-{}dir".format(dir),
             cmd_args([cmd_args(md_file, ignore_artifacts = True, parent = 1), module.prefix_dir], delimiter = "/"),
         )
     if module.stub_dir != None:
         stubs = outputs[module.stub_dir]
-        compile_args_for_file.add("-stubdir", stubs)
+        module_specific_args.add("-stubdir", stubs)
 
     if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
-        compile_args_for_file.add("-dynamic-too")
-        compile_args_for_file.add("-dyno", objects[1])
-        compile_args_for_file.add("-dynohi", his[1])
+        module_specific_args.add("-dynamic-too")
+        module_specific_args.add("-dyno", objects[1])
+        module_specific_args.add("-dynohi", his[1])
 
     compile_args_for_file.add(module.source)
 
@@ -833,7 +875,17 @@ def _compile_module(
                 v,
                 format = "--extra-env-value={}",
             ))
-    if haskell_toolchain.use_argsfile:
+    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+        compile_cmd_args.append(cmd_args(common_args.pkgname, prepend = "--unit"))
+        compile_cmd_args.append(cmd_args(module_name, prepend = "--module", hidden = [module.source]))
+        file = argfile(
+            actions = actions,
+            name = "haskell_compile_" + artifact_suffix + "-" + module_name + ".args",
+            args = module_specific_args,
+        )
+        compile_cmd_args.append(cmd_args(file, prepend = "--ghc-args"))
+    elif haskell_toolchain.use_argsfile:
+        compile_args_for_file.add(module_specific_args)
         compile_cmd_args.append(at_argfile(
             actions = actions,
             name = "haskell_compile_" + artifact_suffix + ".argsfile",
@@ -842,6 +894,7 @@ def _compile_module(
         ))
     else:
         compile_cmd_args.append(compile_args_for_file)
+        compile_cmd_args.append(module_specific_args)
 
     compile_cmd = cmd_args(compile_cmd_args, hidden = compile_cmd_hidden)
 
@@ -892,6 +945,14 @@ def _compile_module(
         dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
         actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
         compile_cmd.add("--dep-modules", dep_modules_file)
+        dep_files = {
+            "abi": abi_tag,
+        }
+    else:
+        dep_files = {
+            "abi": abi_tag,
+            "packagedb": packagedb_tag,
+        }
 
     if worker == None:
         worker_args = dict()
@@ -904,10 +965,7 @@ def _compile_module(
         compile_cmd,
         category = "haskell_compile_" + artifact_suffix.replace("-", "_"),
         identifier = module_name,
-        dep_files = {
-            "abi": abi_tag,
-            "packagedb": packagedb_tag,
-        },
+        dep_files = dep_files,
         # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
         **worker_args
