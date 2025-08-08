@@ -333,11 +333,10 @@ def target_metadata(
         link_style: LinkStyle,
         enable_profiling: bool,
         sources: list[Artifact],
-        suffix: str = "",
         worker: WorkerInfo | None) -> Artifact:
     prof_suffix = "-prof" if enable_profiling else ""
     link_suffix = "-" + link_style.value
-    md_file = ctx.actions.declare_output(ctx.label.name + suffix + link_suffix + prof_suffix + ".md.json")
+    md_file = ctx.actions.declare_output(ctx.label.name + link_suffix + prof_suffix + ".md.json")
     md_gen = ctx.attrs._generate_target_metadata[RunInfo]
 
     libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
@@ -380,7 +379,7 @@ def target_metadata(
             sources = sources,
             external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
             strip_prefix = _strip_prefix(str(ctx.label.cell_root), str(ctx.label.path)),
-            suffix = suffix,
+            suffix = link_style.value + ("+prof" if enable_profiling else ""),
             toolchain_libs = toolchain_libs,
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
