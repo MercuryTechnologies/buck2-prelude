@@ -959,6 +959,8 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
 
     md_file = target_metadata(
         ctx,
+        link_style = LinkStyle("shared"),
+        enable_profiling = False,
         sources = ctx.attrs.srcs,
         worker = worker,
     )
@@ -1356,6 +1358,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     md_file = target_metadata(
         ctx,
+        link_style = LinkStyle("shared"),
+        enable_profiling = False,
         sources = ctx.attrs.srcs,
         worker = worker,
     )
