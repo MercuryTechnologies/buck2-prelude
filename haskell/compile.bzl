@@ -373,7 +373,7 @@ def target_metadata(
             direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
             haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
             haskell_toolchain = haskell_toolchain,
-            lib_package_name_and_prefix = _attr_deps_haskell_lib_package_name_and_prefix(ctx),
+            lib_package_name_and_prefix = _attr_deps_haskell_lib_package_name_and_prefix(ctx, link_style),
             md_gen = md_gen,
             sources = sources,
             external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
@@ -390,7 +390,7 @@ def target_metadata(
 
     return md_file
 
-def _attr_deps_haskell_lib_package_name_and_prefix(ctx: AnalysisContext) -> cmd_args:
+def _attr_deps_haskell_lib_package_name_and_prefix(ctx: AnalysisContext, link_style: LinkStyle) -> cmd_args:
     args = cmd_args(prepend = "--package")
 
     for dep in attr_deps(ctx) + ctx.attrs.template_deps:
@@ -398,7 +398,7 @@ def _attr_deps_haskell_lib_package_name_and_prefix(ctx: AnalysisContext) -> cmd_
         if lib == None:
             continue
 
-        lib_info = lib.lib.values()[0]
+        lib_info = lib.lib[link_style]
         args.add(cmd_args(
             lib_info.name,
             cmd_args(lib_info.db, parent = 1),
