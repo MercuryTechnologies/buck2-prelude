@@ -388,8 +388,8 @@ def target_metadata(
 
     haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
         ctx,
-        LinkStyle("shared"),
-        enable_profiling = False,
+        link_style,
+        enable_profiling,
     )
 
     # The object and interface file paths are depending on the real module name
