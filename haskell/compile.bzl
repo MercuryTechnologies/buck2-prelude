@@ -224,7 +224,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         specify_pkg_version = False,
         enable_profiling = False,
         use_empty_lib = True,
-        for_deps = False,
+        for_deps = True,
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
