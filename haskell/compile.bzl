@@ -143,7 +143,7 @@ def _strip_prefix(prefix, s):
 
     return stripped if stripped != None else s
 
-def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_style: LinkStyle, enable_profiling: bool, suffix: str, module_prefix: str | None, is_haskell_binary: bool) -> dict[str, _Module]:
+def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_style: LinkStyle, enable_profiling: bool, suffix: str, module_prefix: str | None, is_haskell_binary: bool, worker_make: bool) -> dict[str, _Module]:
     modules = {}
 
     osuf, hisuf = output_extensions(link_style, enable_profiling)
@@ -198,7 +198,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
             objects.append(object)
 
         if ctx.attrs.incremental:
-            if bootsuf == "":
+            if bootsuf == "" and not worker_make:
                 stub_dir = ctx.actions.declare_output("stub-" + suffix + "-" + module_name, dir = True)
             else:
                 stub_dir = None
@@ -225,7 +225,7 @@ def transitive_build_plans(actions: AnalysisActions, pkgname: str, packages_info
     actions.write_json(build_plans_file, packages_info.transitive_deps.project_as_json("dep_unit"), with_inputs = True, pretty = True)
     return cmd_args(build_plans_file, prepend = "--dep-units")
 
-def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo, output: OutputArtifact) -> cmd_args:
+def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo, output: OutputArtifact, worker_make: bool) -> cmd_args:
     package_flag = _package_flag(arg.haskell_toolchain)
     artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
 
@@ -234,6 +234,7 @@ def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo
         "-i",
         "-j",
         "-hide-all-packages",
+        "-fwrite-ide-info",
     )
     args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
     args.add(cmd_args(packages_info.exposed_package_args))
@@ -259,7 +260,9 @@ def unit_args(actions: AnalysisActions, arg: struct, packages_info: PackagesInfo
     args.add("-osuf", osuf, "-hisuf", hisuf)
     return args
 
-def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
+def _dynamic_target_metadata_impl(actions, output, stubs_dir, arg, pkg_deps) -> list[Provider]:
+    worker_make = arg.allow_worker and arg.haskell_toolchain.use_worker and arg.haskell_toolchain.worker_make
+
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
 
@@ -284,7 +287,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
-    ghc_args = unit_args(actions, arg, packages_info, output)
+    ghc_args = unit_args(actions, arg, packages_info, output, worker_make)
 
     md_args = cmd_args()
     md_args.add(cmd_args(
@@ -306,9 +309,11 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     md_args.add("--output", output)
 
     haskell_toolchain = arg.haskell_toolchain
-    if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+    if worker_make:
         build_plan = actions.declare_output(arg.pkgname + ".depends.json")
         makefile = actions.declare_output(arg.pkgname + ".depends.make")
+
+        ghc_args.add(cmd_args(stubs_dir, prepend = "-stubdir", ignore_artifacts = True))
 
         ghc_args.add("-include-pkg-deps")
         ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
@@ -332,7 +337,7 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
             format = "--bin-exe={}",
         ))
         bp_args.add(transitive_build_plans(actions, arg.pkgname, packages_info))
-        bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
+        bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [stubs_dir, build_plan.as_output(), makefile.as_output()]))
 
         actions.run(
             bp_args,
@@ -364,6 +369,7 @@ _dynamic_target_metadata = dynamic_actions(
     impl = _dynamic_target_metadata_impl,
     attrs = {
         "output": dynattrs.output(),
+        "stubs_dir": dynattrs.output(),
         "arg": dynattrs.value(typing.Any),
         "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
     },
@@ -375,6 +381,7 @@ def target_metadata(
         sources: list[Artifact],
         link_style: LinkStyle,
         enable_profiling: bool,
+        stubs_dir: Artifact,
         worker: WorkerInfo | None) -> Artifact:
     prof_suffix = "-prof" if enable_profiling else ""
     link_suffix = "-" + link_style.value
@@ -410,6 +417,7 @@ def target_metadata(
     ctx.actions.dynamic_output_new(_dynamic_target_metadata(
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
         output = md_file.as_output(),
+        stubs_dir = stubs_dir.as_output(),
         arg = struct(
             compiler_flags = ctx.attrs.compiler_flags,
             deps = ctx.attrs.deps,
@@ -623,6 +631,7 @@ def _common_compile_module_args(
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
+    # TODO these probably have to be special-cased for the worker
     command.add(haskell_toolchain.compiler_flags)
     command.add(compiler_flags)
 
@@ -759,12 +768,16 @@ def _compile_module(
         worker: None | WorkerInfo,
         allow_worker: bool,
         is_haskell_binary: bool) -> CompiledModuleTSet:
+    worker_make = allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make
+
     # These arguments are concerned with a module's output paths, as well as link style and profiling.
+    # TODO do we want aux_deps in the hidden inputs for this one as well?
     module_specific_args = cmd_args(common_args.module_specific_args, hidden = [])
+
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
-    if not (allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make):
+    if not worker_make:
         packagedb_tag = actions.artifact_tag()
         compile_args_for_file.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
 
@@ -857,7 +870,7 @@ def _compile_module(
                 v,
                 format = "--extra-env-value={}",
             ))
-    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+    if worker_make:
         compile_cmd_args.append(cmd_args(common_args.pkgname, prepend = "--unit"))
         compile_cmd_args.append(cmd_args(module_name, prepend = "--module"))
         file = argfile(
@@ -917,8 +930,8 @@ def _compile_module(
     compile_cmd.add("--buck2-dep", tagged_dep_file)
     compile_cmd.add("--abi-out", outputs[module.hash])
 
-    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-        dep_graph = dict(
+    if worker_make:
+        dep_modules = dict(
             home_unit = [dep.value for dep in this_package_modules],
             project = cross_package_modules.project_as_json("dep_graph"),
         )
@@ -1302,13 +1315,16 @@ def compile(
         enable_haddock: bool,
         md_file: Artifact,
         pkgname: str,
+        stubs_dir: Artifact,
         worker: WorkerInfo | None = None,
         incremental: bool = False,
         is_haskell_binary: bool = False) -> CompileResultInfo:
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    worker_make = ctx.attrs.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make
+
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
-    modules = _modules_by_name(ctx, sources = ctx.attrs.srcs, link_style = link_style, enable_profiling = enable_profiling, suffix = artifact_suffix, module_prefix = ctx.attrs.module_prefix, is_haskell_binary = is_haskell_binary)
-    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    modules = _modules_by_name(ctx, sources = ctx.attrs.srcs, link_style = link_style, enable_profiling = enable_profiling, suffix = artifact_suffix, module_prefix = ctx.attrs.module_prefix, is_haskell_binary = is_haskell_binary, worker_make = worker_make)
 
     interfaces = [interface for module in modules.values() for interface in module.interfaces]
     objects = [object for module in modules.values() for object in module.objects]
@@ -1318,10 +1334,13 @@ def compile(
         for module in modules.values()
         if module.stub_dir != None
     ]
+    # TODO This previously had the same filter condition as the above, but that broke when I changed stub dirs to not be
+    # used for the worker.
+    # I imagine that the reason for this might have been that a missing stub dir was an indicator for a boot module, or
+    # maybe the fact that we're not in Cabal mode?
     abi_hashes = [
         module.hash
         for module in modules.values()
-        if module.stub_dir != None
     ]
 
     # Collect library dependencies. Note that these don't need to be in a
@@ -1371,47 +1390,46 @@ def compile(
         ),
     ))
 
-    stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
+    if not worker_make:
+        # collect the stubs from all modules into the stubs_dir
+        if ctx.attrs.use_argsfile_at_link:
+            stub_copy_cmd = cmd_args([
+                "bash",
+                "-euc",
+                """\
+                mkdir -p \"$0\"
+                cat $1 | while read stub; do
+                find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
+                done
+                """,
+            ])
+            stub_copy_cmd.add(stubs_dir.as_output())
+            stub_copy_cmd.add(argfile(
+                actions = ctx.actions,
+                name = "haskell_stubs_" + artifact_suffix + ".argsfile",
+                args = stub_dirs,
+                allow_args = True,
+            ))
+        else:
+            stub_copy_cmd = cmd_args([
+                "bash",
+                "-euc",
+                """\
+                mkdir -p \"$0\"
+                for stub; do
+                find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
+                done
+                """,
+            ])
+            stub_copy_cmd.add(stubs_dir.as_output())
+            stub_copy_cmd.add(stub_dirs)
 
-    # collect the stubs from all modules into the stubs_dir
-    if ctx.attrs.use_argsfile_at_link:
-        stub_copy_cmd = cmd_args([
-            "bash",
-            "-euc",
-            """\
-            mkdir -p \"$0\"
-            cat $1 | while read stub; do
-              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
-            done
-            """,
-        ])
-        stub_copy_cmd.add(stubs_dir.as_output())
-        stub_copy_cmd.add(argfile(
-            actions = ctx.actions,
-            name = "haskell_stubs_" + artifact_suffix + ".argsfile",
-            args = stub_dirs,
-            allow_args = True,
-        ))
-    else:
-        stub_copy_cmd = cmd_args([
-            "bash",
-            "-euc",
-            """\
-            mkdir -p \"$0\"
-            for stub; do
-              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
-            done
-            """,
-        ])
-        stub_copy_cmd.add(stubs_dir.as_output())
-        stub_copy_cmd.add(stub_dirs)
-
-    ctx.actions.run(
-        stub_copy_cmd,
-        category = "haskell_stubs",
-        identifier = artifact_suffix,
-        local_only = True,
-    )
+        ctx.actions.run(
+            stub_copy_cmd,
+            category = "haskell_stubs",
+            identifier = artifact_suffix,
+            local_only = True,
+        )
 
     return CompileResultInfo(
         objects = objects,

@@ -658,6 +658,7 @@ def _build_haskell_lib(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
+        stubs_dir: Artifact,
         # The non-profiling artifacts are also needed to build the package for
         # profiling, so it should be passed when `enable_profiling` is True.
         non_profiling_hlib: [HaskellLibBuildOutput, None] = None) -> HaskellLibBuildOutput:
@@ -674,6 +675,7 @@ def _build_haskell_lib(
         enable_haddock = enable_haddock,
         md_file = md_file,
         pkgname = pkgname,
+        stubs_dir = stubs_dir,
         worker = worker,
         incremental = ctx.attrs.incremental,
         is_haskell_binary = False,
@@ -934,11 +936,15 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 # Profiling isn't support with dynamic linking
                 continue
 
+            artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
+            stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
+
             md_file = target_metadata(
                 ctx,
                 sources = ctx.attrs.srcs,
                 link_style = link_style,
                 enable_profiling = enable_profiling,
+                stubs_dir = stubs_dir,
                 worker = worker,
             )
 
@@ -955,6 +961,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 # enable haddock only for the first non-profiling hlib
                 enable_haddock = not enable_profiling and not non_profiling_hlib,
                 md_file = md_file,
+                stubs_dir = stubs_dir,
                 non_profiling_hlib = non_profiling_hlib.get(link_style),
             )
             if not enable_profiling:
@@ -1306,11 +1313,15 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     worker = ctx.attrs._worker[WorkerInfo] if ctx.attrs._worker else None
 
+    artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
+    stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
+
     md_file = target_metadata(
         ctx,
         sources = ctx.attrs.srcs,
         link_style = link_style,
         enable_profiling = enable_profiling,
+        stubs_dir = stubs_dir,
         worker = worker,
     )
 
@@ -1325,6 +1336,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_profiling = enable_profiling,
         enable_haddock = False,
         md_file = md_file,
+        stubs_dir = stubs_dir,
         worker = worker,
         pkgname = pkgname,
         is_haskell_binary = True,
