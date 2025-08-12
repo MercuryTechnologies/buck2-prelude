@@ -658,7 +658,7 @@ def _build_haskell_lib(
         enable_profiling: bool,
         enable_haddock: bool,
         md_file: Artifact,
-        stubs_dir: Artifact,
+        stubs_dir: Artifact | None,
         # The non-profiling artifacts are also needed to build the package for
         # profiling, so it should be passed when `enable_profiling` is True.
         non_profiling_hlib: [HaskellLibBuildOutput, None] = None) -> HaskellLibBuildOutput:
@@ -937,7 +937,10 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 continue
 
             artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
-            stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
+            if worker:
+                stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
+            else:
+                stubs_dir = None
 
             md_file = target_metadata(
                 ctx,

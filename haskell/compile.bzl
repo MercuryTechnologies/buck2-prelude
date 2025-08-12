@@ -369,7 +369,7 @@ _dynamic_target_metadata = dynamic_actions(
     impl = _dynamic_target_metadata_impl,
     attrs = {
         "output": dynattrs.output(),
-        "stubs_dir": dynattrs.output(),
+        "stubs_dir": dynattrs.option(dynattrs.output()),
         "arg": dynattrs.value(typing.Any),
         "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
     },
@@ -381,7 +381,7 @@ def target_metadata(
         sources: list[Artifact],
         link_style: LinkStyle,
         enable_profiling: bool,
-        stubs_dir: Artifact,
+        stubs_dir: Artifact | None,
         worker: WorkerInfo | None) -> Artifact:
     prof_suffix = "-prof" if enable_profiling else ""
     link_suffix = "-" + link_style.value
@@ -417,7 +417,7 @@ def target_metadata(
     ctx.actions.dynamic_output_new(_dynamic_target_metadata(
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
         output = md_file.as_output(),
-        stubs_dir = stubs_dir.as_output(),
+        stubs_dir = stubs_dir.as_output() if stubs_dir else None,
         arg = struct(
             compiler_flags = ctx.attrs.compiler_flags,
             deps = ctx.attrs.deps,
@@ -1315,7 +1315,7 @@ def compile(
         enable_haddock: bool,
         md_file: Artifact,
         pkgname: str,
-        stubs_dir: Artifact,
+        stubs_dir: Artifact | None,
         worker: WorkerInfo | None = None,
         incremental: bool = False,
         is_haskell_binary: bool = False) -> CompileResultInfo:
@@ -1390,7 +1390,9 @@ def compile(
         ),
     ))
 
-    if not worker_make:
+    if not stubs_dir:
+        stubs_dir = ctx.actions.declare_output("stubs_{}".format(artifact_suffix), dir = True)
+
         # collect the stubs from all modules into the stubs_dir
         if ctx.attrs.use_argsfile_at_link:
             stub_copy_cmd = cmd_args([
