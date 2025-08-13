@@ -840,6 +840,7 @@ def _compile_module(
 
     if enable_th:
         compile_cmd.add("-fprefer-byte-code")
+        compile_cmd.add("-fpackage-db-byte-code")
 
     compile_cmd.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
 
@@ -962,6 +963,7 @@ def compile_args(
 
     compile_cmd.add("-fbyte-code-and-object-code")
     compile_cmd.add("-fprefer-byte-code")
+    compile_cmd.add("-fpackage-db-byte-code")
     compile_cmd.add("-j")
 
     ####
