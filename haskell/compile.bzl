@@ -777,12 +777,14 @@ def _compile_module(
         worker: None | WorkerInfo,
         allow_worker: bool,
         is_haskell_binary: bool) -> CompiledModuleTSet:
+    worker_make = allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make
+
     # These arguments are concerned with a module's output paths, as well as link style and profiling.
     module_specific_args = cmd_args(common_args.module_specific_args, hidden = [])
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
-    if not (allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make):
+    if not worker_make:
         packagedb_tag = actions.artifact_tag()
         compile_args_for_file.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
 
@@ -815,9 +817,21 @@ def _compile_module(
             "-{}dir".format(dir),
             cmd_args([cmd_args(md_file, ignore_artifacts = True, parent = 1), module.prefix_dir], delimiter = "/"),
         )
+
     if module.stub_dir != None:
         stubs = outputs[module.stub_dir]
-        module_specific_args.add("-stubdir", stubs)
+        # The worker does not support stub dirs at the moment, so we create it directly.
+        # Since the entire module graph's flags are supposed to be fully initialized in the metadata step, we can't pass
+        # any module-specific args to the worker.
+        if worker_make:
+            actions.run(
+                cmd_args(["bash", "-euc", "mkdir -p \"$0\"", stubs]),
+                category = "haskell_stubs",
+                identifier = "worker-dummy-stubdir-{}-{}".format(module_name, artifact_suffix),
+                local_only = True,
+            )
+        else:
+            module_specific_args.add("-stubdir", stubs)
 
     if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
         module_specific_args.add("-dynamic-too")
