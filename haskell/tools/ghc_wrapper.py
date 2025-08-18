@@ -49,6 +49,11 @@ def main():
         "--ghc-dir", type=str, help="Worker option"
     )
     parser.add_argument(
+        "--ghc-argsfile",
+        required=False,
+        type=str,
+        help="File path containing arguments for GHC.")
+    parser.add_argument(
         "--abi-out",
         required=False, # True,
         type=Path,
@@ -116,7 +121,8 @@ def main():
     else:
         worker_args = []
         use_persistent_workers = False
-    cmd = [args.ghc] + worker_args + ghc_args
+
+    cmd = [args.ghc] + worker_args + ghc_args + (["@" + args.ghc_argsfile] if args.ghc_argsfile else [])
 
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(os.path.dirname(binexepath)) for binexepath in args.bin_exe]
     env = os.environ.copy()
