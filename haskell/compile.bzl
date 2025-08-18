@@ -231,18 +231,14 @@ def transitive_metadata(actions: AnalysisActions, pkgname: str, packages_info: P
     actions.write_json(dep_units_file, dep_units, with_inputs = True, pretty = True)
     return cmd_args(dep_units_file, prepend = "--dep-units")
 
+def add_output_dirs(args: cmd_args, output_dir: cmd_args):
+    for dir in ["o", "hi", "hie", "dump"]:
+        args.add("-{}dir".format(dir), output_dir)
+
 # Assemble GHC arguments that are specific to a given unit, but not to a module.
 # Used for the metadata step as a basis for the non-worker case and as the full argument list for the worker case.
 # The worker also stores these in the metadata JSON in order to restore the unit state from cache after restarting.
-def unit_args(
-    actions: AnalysisActions,
-    arg: struct,
-    packages_info: PackagesInfo,
-    output: OutputArtifact,
-    enable_th: bool) -> cmd_args:
-    package_flag = _package_flag(arg.haskell_toolchain)
-    artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
-
+def unit_args(actions: AnalysisActions, arg: struct) -> cmd_args:
     args = cmd_args(
         "-no-link",
         "-i",
@@ -251,10 +247,10 @@ def unit_args(
         "-fwrite-ide-info",
         "-package-env=-",
     )
-    args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
-    args.add(cmd_args(packages_info.exposed_package_args))
-    args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
-    args.add(arg.compiler_flags)
+    # REVIEW do we want this here? The comment below talks about RTS options, which don't make sense to use here in the
+    # worker context – they would need to be set when executing the worker process.
+    # args.add(arg.haskell_toolchain.compiler_flags)
+    # args.add(arg.compiler_flags)
     args.add("-this-unit-id", arg.pkgname)
 
     if arg.enable_profiling:
@@ -265,22 +261,52 @@ def unit_args(
     elif arg.link_style == LinkStyle("static_pic"):
         args.add("-fPIC", "-fexternal-dynamic-refs")
 
+    if arg.link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
+        args.add("-dynamic-too")
+
+    args.add("-fbyte-code-and-object-code")
+
+    osuf, hisuf = output_extensions(arg.link_style, arg.enable_profiling)
+    args.add("-osuf", osuf, "-hisuf", hisuf)
+
+    args.add(cmd_args(
+        arg.external_tool_paths,
+        format = "--bin-exe={}",
+    ))
+
+    # TODO
+    # if main != None:
+    #     command.add(["-main-is", main])
+    #
+    # if enable_haddock:
+    #     command.add("-haddock")
+
+    return args
+
+def metadata_unit_args(
+    actions: AnalysisActions,
+    arg: struct,
+    packages_info: PackagesInfo,
+    output: OutputArtifact) -> cmd_args:
+
     # Configure all output directories to use e.g. `mod-shared` next to the metadata file (`output`).
+    artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
     output_dir = cmd_args(
         [cmd_args(output, ignore_artifacts = True, parent = 1), "mod-" + artifact_suffix],
         delimiter = "/",
     )
-    for dir in ["o", "hi", "hie", "dump"]:
-        args.add("-{}dir".format(dir), output_dir)
 
-    args.add("-fbyte-code-and-object-code")
+    args = unit_args(actions, arg)
 
-    if enable_th:
-        args.add("-fprefer-byte-code")
-        args.add("-fpackage-db-byte-code")
+    add_output_dirs(args, output_dir)
 
-    osuf, hisuf = output_extensions(arg.link_style, arg.enable_profiling)
-    args.add("-osuf", osuf, "-hisuf", hisuf)
+    package_flag = _package_flag(arg.haskell_toolchain)
+    args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
+
+    args.add(cmd_args(packages_info.exposed_package_args))
+    args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
+    args.add("-fprefer-byte-code")
+    args.add("-fpackage-db-byte-code")
     return args
 
 def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
@@ -301,13 +327,10 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
         pkg_deps = pkg_deps,
     )
     package_flag = _package_flag(arg.haskell_toolchain)
-    ghc_args = unit_args(actions, arg, packages_info, output, enable_th = true)
+
+    ghc_args = metadata_unit_args(actions, arg, packages_info, output)
 
     md_args = cmd_args()
-    md_args.add(cmd_args(
-        arg.external_tool_paths,
-        format = "--bin-exe={}",
-    ))
 
     md_args.add("--ghc", arg.haskell_toolchain.compiler)
     md_args.add(cmd_args(ghc_args, format = "--ghc-arg={}"))
@@ -565,8 +588,9 @@ def get_packages_info(
 CommonCompileModuleArgs = record(
     pkgname = field(str),
     command = field(cmd_args),
-    module_specific_args = field(cmd_args),
     args_for_file = field(cmd_args),
+    oneshot_args_for_file = field(cmd_args),
+    oneshot_wrapper_args = field(cmd_args),
     package_env_args = field(cmd_args),
     target_deps_args = field(cmd_args),
 )
@@ -607,9 +631,30 @@ def make_package_env(
     )
     return package_env_file
 
+def _common_compile_wrapper_args(
+        ghc_wrapper: RunInfo,
+        haskell_toolchain: HaskellToolchainInfo,
+        pkgname: str,
+        use_worker: bool,
+) -> cmd_args:
+    args = cmd_args()
+
+    if use_worker:
+        add_worker_args(haskell_toolchain, args, pkgname)
+    else:
+        args.add(ghc_wrapper)
+        args.add("--ghc", haskell_toolchain.compiler)
+
+    args.add("--ghc-dir", haskell_toolchain.ghc_dir)
+
+    return args
+
+# REVIEW I added `arg` as a parameter, is that acceptable?
+# Or should all params be statically known?
 def _common_compile_module_args(
         actions: AnalysisActions,
         *,
+        arg: struct,
         compiler_flags: list[ArgLike],
         incremental: bool,
         ghc_wrapper: RunInfo,
@@ -629,28 +674,8 @@ def _common_compile_module_args(
         toolchain_deps_by_name,
         direct_deps_by_name,
         pkgname: str) -> CommonCompileModuleArgs:
-    # These arguments are concerned with a module's output paths, as well as link style and profiling.
-    module_specific_args = cmd_args()
-
-    command = cmd_args(ghc_wrapper)
-    command.add("--ghc", haskell_toolchain.compiler)
-    command.add("--ghc-dir", haskell_toolchain.ghc_dir)
-
-    if allow_worker and haskell_toolchain.use_worker:
-        add_worker_args(haskell_toolchain, command, pkgname)
-
-    # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
-    # be parsed when inside an argsfile.
-    command.add(haskell_toolchain.compiler_flags)
-    command.add(compiler_flags)
-
-    command.add("-c")
-
-    if main != None:
-        command.add(["-main-is", main])
-
-    if enable_haddock:
-        command.add("-haddock")
+    use_worker = allow_worker and haskell_toolchain.use_worker
+    worker_make = use_worker and haskell_toolchain.worker_make
 
     non_haskell_sources = [
         src
@@ -661,95 +686,256 @@ def _common_compile_module_args(
     if non_haskell_sources:
         warning("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead: {}".format(label, non_haskell_sources))
 
-    args_for_file = cmd_args(hidden = non_haskell_sources)
+    # These arguments are used in both modes and can be passed in an argsfile.
+    args_for_file = cmd_args([], hidden = non_haskell_sources)
 
-    args_for_file.add("-no-link", "-i")
-    args_for_file.add("-hide-all-packages")
-    args_for_file.add("-fwrite-ide-info")
+    # These arguments are only for oneshot mode, as opposed to the worker's make mode.
+    oneshot_args_for_file = unit_args(actions, unit_params)
 
-    if enable_profiling:
-        module_specific_args.add("-prof")
+    # Also oneshot-specific, but either consumed by `ghc_wrapper` or impossible to be passed as a response file, like
+    # RTS options.
+    oneshot_wrapper_args = cmd_args()
 
-    if link_style == LinkStyle("shared"):
-        module_specific_args.add("-dynamic", "-fPIC")
-    elif link_style == LinkStyle("static_pic"):
-        module_specific_args.add("-fPIC", "-fexternal-dynamic-refs")
+    # These arguments are not intended for GHC, but for either `ghc_wrapper` or the worker.
+    command = _common_compile_wrapper_args(ghc_wrapper, haskell_toolchain, pkgname, use_worker)
 
-    osuf, hisuf = output_extensions(link_style, enable_profiling)
-    module_specific_args.add("-osuf", osuf, "-hisuf", hisuf)
+    if not worker_make:
+
+        # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
+        # be parsed when inside an argsfile.
+        oneshot_wrapper_args.add(haskell_toolchain.compiler_flags)
+        oneshot_wrapper_args.add(compiler_flags)
+
+        # TODO these two are also in `unit_args`, still commented
+        if main != None:
+            oneshot_args.add(["-main-is", main])
+
+        if enable_haddock:
+            oneshot_args.add("-haddock")
+
+        oneshot_args_for_file.add("-c")
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
     pre = cxx_merge_cpreprocessors_actions(actions, [], inherited_pre)
     pre_args = pre.set.project_as_args("args")
     args_for_file.add(cmd_args(pre_args, format = "-optP={}"))
-    args_for_file.add(["-this-unit-id", pkgname])
 
-    # Add -package-db and -package/-expose-package flags for each Haskell
-    # library dependency.
-
-    libs = actions.tset(HaskellLibraryInfoTSet, children = direct_deps_info)
-
-    direct_toolchain_libs = [
-        dep[HaskellToolchainLibrary].name
-        for dep in deps
-        if HaskellToolchainLibrary in dep
-    ]
-    toolchain_libs = direct_toolchain_libs + libs.reduce("packages")
-
-    if haskell_toolchain.packages:
-        package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+    if worker_make:
+        package_env_args = cmd_args()
     else:
-        package_db = []
+        # Add -package-db and -package/-expose-package flags for each Haskell
+        # library dependency.
 
-    package_db_tset = actions.tset(
-        HaskellPackageDbTSet,
-        children = [package_db[name] for name in toolchain_libs if name in package_db],
-    )
+        libs = actions.tset(HaskellLibraryInfoTSet, children = direct_deps_info)
 
-    args_for_file.add(cmd_args(
-        external_tool_paths,
-        format = "--bin-exe={}",
-    ))
+        direct_toolchain_libs = [
+            dep[HaskellToolchainLibrary].name
+            for dep in deps
+            if HaskellToolchainLibrary in dep
+        ]
+        toolchain_libs = direct_toolchain_libs + libs.reduce("packages")
 
-    if incremental:
-        packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
-    else:
-        packagedb_args = cmd_args(libs.project_as_args("package_db"))
-    packagedb_args.add(package_db_tset.project_as_args("package_db"))
+        if haskell_toolchain.packages:
+            package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+        else:
+            package_db = []
 
-    package_env_file = make_package_env(
-        actions,
-        haskell_toolchain,
-        label,
-        link_style,
-        enable_profiling,
-        allow_worker,
-        packagedb_args,
-    )
-    package_env_args = cmd_args(
-        package_env_file,
-        prepend = "-package-env",
-        hidden = packagedb_args,
-    )
+        package_db_tset = actions.tset(
+            HaskellPackageDbTSet,
+            children = [package_db[name] for name in toolchain_libs if name in package_db],
+        )
+
+        if incremental:
+            packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
+        else:
+            packagedb_args = cmd_args(libs.project_as_args("package_db"))
+        packagedb_args.add(package_db_tset.project_as_args("package_db"))
+
+        package_env_file = make_package_env(
+            actions,
+            haskell_toolchain,
+            label,
+            link_style,
+            enable_profiling,
+            allow_worker,
+            packagedb_args,
+        )
+        package_env_args = cmd_args(
+            package_env_file,
+            prepend = "-package-env",
+            hidden = packagedb_args,
+        )
 
     # target-level dependencies. needed for non-incremental build.
     target_deps_args = cmd_args()
 
-    for pkg in toolchain_deps_by_name:
-        target_deps_args.add(cmd_args(pkg, prepend = "-package"))
+    if not worker_make:
+        for pkg in toolchain_deps_by_name:
+            target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
-    for pkg in direct_deps_by_name:
-        target_deps_args.add(cmd_args(pkg, prepend = "-package"))
+        for pkg in direct_deps_by_name:
+            target_deps_args.add(cmd_args(pkg, prepend = "-package"))
 
     return CommonCompileModuleArgs(
         pkgname = pkgname,
         command = command,
-        module_specific_args = module_specific_args,
+        oneshot_args_for_file = oneshot_args_for_file,
+        oneshot_wrapper_args = oneshot_wrapper_args,
         args_for_file = args_for_file,
         package_env_args = package_env_args,
         target_deps_args = target_deps_args,
     )
+
+# Arguments for GHC when running in oneshot mode.
+def _compile_oneshot_args(
+        actions: AnalysisActions,
+        common_args: CommonCompileModuleArgs,
+        link_style: LinkStyle,
+        enable_th: bool,
+        module: _Module,
+        md_file: Artifact,
+        outputs: dict[Artifact, OutputArtifact],
+        artifact_suffix: str,
+        library_deps: list[str],
+        toolchain_deps: list[str],
+        extra_libraries: list[Dependency],
+        packagedb_tag: ArtifactTag):
+    args = cmd_args()
+    args.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
+
+    objects = [outputs[obj] for obj in module.objects]
+    his = [outputs[hi] for hi in module.interfaces]
+    hies = [outputs[hie] for hie in module.hie_files]
+
+    args.add("-o", objects[0])
+    if not hies:
+        args.add(cmd_args("-ohi", his[0]))
+    else:
+        args.add(cmd_args("-ohi", his[0], hidden = [hies[0]]))
+
+    output_dir = cmd_args([cmd_args(md_file, ignore_artifacts = True, parent = 1), module.prefix_dir], delimiter = "/")
+    add_output_dirs(args, output_dir)
+
+    if enable_th:
+        args.add("-fprefer-byte-code")
+        args.add("-fpackage-db-byte-code")
+
+    if module.stub_dir != None:
+        stubs = outputs[module.stub_dir]
+        args.add("-stubdir", stubs)
+
+    if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
+        args.add("-dynamic-too")
+        args.add("-dyno", objects[1])
+        args.add("-dynohi", his[1])
+
+    # extra-libraries
+    extra_libs = [
+        lib[NativeToolchainLibrary]
+        for lib in extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
+    for l in extra_libs:
+        args.add(l.lib_path)
+        args.add("-l{}".format(l.name))
+
+    args.add(
+        cmd_args(
+            cmd_args(md_file, format = "-i{}", ignore_artifacts = True, parent = 1),
+            "/",
+            module.prefix_dir,
+            delimiter = "",
+        ),
+    )
+
+    args.add(cmd_args(library_deps, prepend = "-package"))
+    args.add(cmd_args(toolchain_deps, prepend = "-package"))
+
+    args.add(module.source)
+    return args
+
+# Arguments for `ghc_wrapper` or the worker when running in oneshot mode.
+def _wrapper_oneshot_args(
+        actions: AnalysisActions,
+        link_style: LinkStyle,
+        enable_profiling: bool,
+        label: Label,
+        module_name: str,
+        dependency_modules: CompiledModuleTSet,
+        outputs: dict[Artifact, OutputArtifact],
+        src_envs: None | dict[str, ArgLike],
+        packagedb_tag: ArtifactTag):
+    args = cmd_args()
+
+    args.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
+
+    dep_file = actions.declare_output(".".join([
+        label.name,
+        module_name or "pkg",
+        "package-db",
+        output_extensions(link_style, enable_profiling)[1],
+        "dep",
+    ])).as_output()
+    tagged_dep_file = packagedb_tag.tag_artifacts(dep_file)
+    args.add("--buck2-packagedb-dep", tagged_dep_file)
+
+    # Environment variables are configured per module, and they are global to a process.
+    # The worker runs in a single process per target or build, so these would be shared with other modules.
+    # Furthermore, lots of entries here would cause high memory usage spikes in the worker, since these have to be
+    # decoded as Strings.
+    if src_envs:
+        for k, v in src_envs.items():
+            args.add(cmd_args(
+                k,
+                format = "--extra-env-key={}",
+            ))
+            args.add(cmd_args(
+                v,
+                format = "--extra-env-value={}",
+            ))
+    return args
+
+# Arguments for the worker when running in make mode.
+def _compile_make_args(
+        actions: AnalysisActions,
+        common_args: CommonCompileModuleArgs,
+        module_name: str,
+        module: _Module,
+        outputs: dict[Artifact, OutputArtifact],
+        this_package_modules: list[CompiledModuleTSet],
+        cross_package_modules: CompiledModuleTSet) -> cmd_args:
+    args = cmd_args()
+    # Provide all module dependencies to the worker for state restoration from cache, separating modules in the
+    # current unit from those in other packages of the project.
+    dep_modules = dict(
+        home_unit = [dep.value for dep in this_package_modules],
+        project = cross_package_modules.project_as_json("dep_modules", ordering = "postorder"),
+    )
+    dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
+    actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
+    args.add("--dep-modules", dep_modules_file)
+
+    objects = [outputs[obj] for obj in module.objects]
+    his = [outputs[hi] for hi in module.interfaces]
+    hies = [outputs[hie] for hie in module.hie_files]
+    mod_outputs = objects + his + hies
+    args.add(cmd_args([], hidden = mod_outputs))
+
+    args.add(cmd_args(common_args.pkgname, prepend = "--unit"))
+    args.add(cmd_args(module_name, prepend = "--module", hidden = [module.source]))
+    return args
+
+# Arguments for `ghc_wrapper` or the worker needed in both modes.
+def _shared_wrapper_args(
+        tagged_dep_file: TaggedCommandLine | TaggedValue,
+        module: _Module,
+        outputs: dict[Artifact, OutputArtifact],
+    ) -> cmd_args:
+    args = cmd_args()
+    args.add("--buck2-dep", tagged_dep_file)
+    args.add("--abi-out", outputs[module.hash])
+    return args
 
 def _compile_module(
         actions: AnalysisActions,
@@ -777,70 +963,11 @@ def _compile_module(
         worker: None | WorkerInfo,
         allow_worker: bool,
         is_haskell_binary: bool) -> CompiledModuleTSet:
-    worker_make = allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make
-
-    # These arguments are concerned with a module's output paths, as well as link style and profiling.
-    module_specific_args = cmd_args(common_args.module_specific_args, hidden = [])
-    # These compiler arguments can be passed in a response file.
-    compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
-
-    if not worker_make:
-        packagedb_tag = actions.artifact_tag()
-        compile_args_for_file.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
-
-        dep_file = actions.declare_output(".".join([
-            label.name,
-            module_name or "pkg",
-            "package-db",
-            output_extensions(link_style, enable_profiling)[1],
-            "dep",
-        ])).as_output()
-        tagged_dep_file = packagedb_tag.tag_artifacts(dep_file)
-        compile_args_for_file.add("--buck2-packagedb-dep", tagged_dep_file)
-
-    objects = [outputs[obj] for obj in module.objects]
-    his = [outputs[hi] for hi in module.interfaces]
-    hies = [outputs[hie] for hie in module.hie_files]
-
-    module_specific_args.add("-o", objects[0])
-    if not hies:
-        module_specific_args.add(cmd_args("-ohi", his[0]))
-    else:
-        module_specific_args.add(cmd_args("-ohi", his[0], hidden = [hies[0]]))
-
-    # Set the output directories. We do not use the -outputdir flag, but set the directories individually.
-    # Note, the -outputdir option is shorthand for the combination of -odir, -hidir, -hiedir, -stubdir and -dumpdir.
-    # But setting -hidir effectively disables the use of the search path to look up interface files,
-    # as ghc exclusively looks in that directory when it is set.
-    for dir in ["o", "hie", "dump"]:
-        module_specific_args.add(
-            "-{}dir".format(dir),
-            cmd_args([cmd_args(md_file, ignore_artifacts = True, parent = 1), module.prefix_dir], delimiter = "/"),
-        )
-
-    if module.stub_dir != None:
-        stubs = outputs[module.stub_dir]
-        # The worker does not support stub dirs at the moment, so we create it directly.
-        # Since the entire module graph's flags are supposed to be fully initialized in the metadata step, we can't pass
-        # any module-specific args to the worker.
-        if worker_make:
-            actions.run(
-                cmd_args(["bash", "-euc", "mkdir -p \"$0\"", stubs]),
-                category = "haskell_stubs",
-                identifier = "worker-dummy-stubdir-{}-{}".format(module_name, artifact_suffix),
-                local_only = True,
-            )
-        else:
-            module_specific_args.add("-stubdir", stubs)
-
-    if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
-        module_specific_args.add("-dynamic-too")
-        module_specific_args.add("-dyno", objects[1])
-        module_specific_args.add("-dynohi", his[1])
-
-    compile_args_for_file.add(module.source)
+    use_worker = allow_worker and haskell_toolchain.use_worker
+    worker_make = use_worker and haskell_toolchain.worker_make
 
     abi_tag = actions.artifact_tag()
+    packagedb_tag = actions.artifact_tag()
 
     toolchain_deps = []
     library_deps = []
@@ -874,103 +1001,112 @@ def _compile_module(
         children = [cross_package_modules] + this_package_modules,
     )
 
+    dep_file = actions.declare_output("dep-{}_{}".format(module_name, artifact_suffix)).as_output()
+
+    tagged_dep_file = abi_tag.tag_artifacts(dep_file)
+
+    # ----------------------------------------------------------------------------------------------------
+
+    # These arguments for `ghc_wrapper`/the worker can be passed in a response file.
+    wrapper_args_for_file = _shared_wrapper_args(tagged_dep_file, module, outputs)
+
+    # These compiler arguments can be passed in a response file.
+    compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
+
     compile_cmd_args = [common_args.command]
     compile_cmd_hidden = [
         abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
         dependency_modules.project_as_args("abi"),
     ]
-    if src_envs:
-        for k, v in src_envs.items():
-            compile_args_for_file.add(cmd_args(
-                k,
-                format = "--extra-env-key={}",
-            ))
-            compile_args_for_file.add(cmd_args(
-                v,
-                format = "--extra-env-value={}",
-            ))
-    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-        compile_cmd_args.append(cmd_args(common_args.pkgname, prepend = "--unit"))
-        compile_cmd_args.append(cmd_args(module_name, prepend = "--module", hidden = [module.source]))
-        file = argfile(
-            actions = actions,
-            name = "haskell_compile_" + artifact_suffix + "-" + module_name + ".args",
-            args = module_specific_args,
-        )
-        compile_cmd_args.append(cmd_args(file, prepend = "--ghc-args"))
-    elif haskell_toolchain.use_argsfile:
-        compile_args_for_file.add(module_specific_args)
-        compile_cmd_args.append(at_argfile(
-            actions = actions,
-            name = "haskell_compile_" + artifact_suffix + ".argsfile",
-            args = compile_args_for_file,
-            allow_args = True,
+
+    # For the make worker, options related to local package dependencies need to be omitted entirely, since it uses the
+    # unit env instead of package DBs to load them.
+    if worker_make:
+        wrapper_args_for_file.add(_compile_make_args(
+            actions,
+            common_args = common_args,
+            module_name = module_name,
+            module = module,
+            outputs = outputs,
+            this_package_modules = this_package_modules,
+            cross_package_modules = cross_package_modules,
         ))
-    else:
-        compile_cmd_args.append(compile_args_for_file)
-        compile_cmd_args.append(module_specific_args)
 
-    compile_cmd = cmd_args(compile_cmd_args, hidden = compile_cmd_hidden)
+        # The make worker does not support stub dirs at the moment, so we create it directly.
+        # Since the entire module graph's flags are supposed to be fully initialized in the metadata step, we can't pass
+        # any module-specific args to the worker (or rather, the worker ignores them in that case).
+        if module.stub_dir != None:
+            stubs = outputs[module.stub_dir]
+            actions.run(
+                cmd_args(["bash", "-euc", "mkdir -p \"$0\"", stubs]),
+                category = "haskell_stubs",
+                identifier = "worker-dummy-stubdir-{}-{}".format(module_name, artifact_suffix),
+                local_only = True,
+            )
 
-    compile_cmd.add(
-        cmd_args(
-            cmd_args(md_file, format = "-i{}", ignore_artifacts = True, parent = 1),
-            "/",
-            module.prefix_dir,
-            delimiter = "",
-        ),
-    )
-
-    compile_cmd.add(cmd_args(library_deps, prepend = "-package"))
-    compile_cmd.add(cmd_args(toolchain_deps, prepend = "-package"))
-
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
-        compile_cmd.add(l.lib_path)
-        compile_cmd.add("-l{}".format(l.name))
-
-    compile_cmd.add("-fbyte-code-and-object-code")
-
-    if enable_th:
-        compile_cmd.add("-fprefer-byte-code")
-        compile_cmd.add("-fpackage-db-byte-code")
-
-    compile_cmd.add(cmd_args(dependency_modules.reduce("packagedb_deps").keys(), prepend = "--buck2-package-db"))
-
-    dep_file = actions.declare_output("dep-{}_{}".format(module_name, artifact_suffix)).as_output()
-
-    tagged_dep_file = abi_tag.tag_artifacts(dep_file)
-
-    compile_cmd.add("--buck2-dep", tagged_dep_file)
-    compile_cmd.add("--abi-out", outputs[module.hash])
-
-    if allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-        # Provide all module dependencies to the worker for state restoration from cache, separating modules in the
-        # current unit from those in other packages of the project.
-        dep_modules = dict(
-            home_unit = [dep.value for dep in this_package_modules],
-            project = cross_package_modules.project_as_json("dep_modules", ordering = "postorder"),
-        )
-        dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
-        actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
-        compile_cmd.add("--dep-modules", dep_modules_file)
         dep_files = {
             "abi": abi_tag,
         }
     else:
+        compile_args_for_file.add(_compile_oneshot_args(
+            actions,
+            common_args = common_args,
+            link_style = link_style,
+            enable_th = enable_th,
+            module = module,
+            md_file = md_file,
+            outputs = outputs,
+            artifact_suffix = artifact_suffix,
+            library_deps = library_deps,
+            toolchain_deps = toolchain_deps,
+            extra_libraries = extra_libraries,
+            packagedb_tag = packagedb_tag,
+        ))
+
+        wrapper_args_for_file.add(_wrapper_oneshot_args(
+            actions,
+            link_style = link_style,
+            enable_profiling = enable_profiling,
+            label = label,
+            module_name = module_name,
+            dependency_modules = dependency_modules,
+            outputs = outputs,
+            src_envs = src_envs,
+            packagedb_tag = packagedb_tag,
+        ))
+
+        compile_args_for_file.add(common_args.oneshot_args_for_file)
+        compile_cmd_args.append(common_args.oneshot_wrapper_args)
+
         dep_files = {
             "abi": abi_tag,
             "packagedb": packagedb_tag,
         }
 
+    category_prefix = "haskell_compile_" + artifact_suffix.replace("-", "_")
+
+    if not use_worker and haskell_toolchain.use_argsfile:
+        wrapper_args_for_file.add(cmd_args(argfile(
+            actions = actions,
+            name = "{}_{}_ghc.argsfile".format(category_prefix, module_name),
+            args = compile_args_for_file,
+            allow_args = True,
+        ), prepend="--ghc-argsfile"))
+        compile_cmd_args.append(at_argfile(
+            actions = actions,
+            name = "{}_{}.argsfile".format(category_prefix, module_name),
+            args = wrapper_args_for_file,
+            allow_args = True,
+        ))
+    else:
+        compile_cmd_args.append(wrapper_args_for_file)
+        compile_cmd_args.append(compile_args_for_file)
+
+    compile_cmd = cmd_args(compile_cmd_args, hidden = compile_cmd_hidden)
+
     if worker == None:
         worker_args = dict()
-    elif allow_worker and haskell_toolchain.use_worker:
+    elif use_worker:
         worker_args = dict(exe = WorkerRunInfo(worker = worker))
     else:
         worker_args = dict()
@@ -1300,6 +1436,7 @@ def _compile_non_incr(
 def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direct_deps_by_name, outputs):
     common_args = _common_compile_module_args(
         actions,
+        arg = arg,
         compiler_flags = arg.compiler_flags,
         incremental = incremental,
         deps = arg.deps,
