@@ -51,6 +51,7 @@ haskell_binary = prelude_rule(
         haskell_common.use_argsfile_at_link_arg () |
         haskell_common.extra_libraries_arg () |
         haskell_common.compiler_flags_arg() |
+        haskell_common.ghc_rts_flags_arg() |
         haskell_common.deps_arg() |
         haskell_common.scripts_arg() |
         haskell_common.module_prefix_arg() |
@@ -177,6 +178,7 @@ haskell_library = prelude_rule(
         haskell_common.use_argsfile_at_link_arg() |
         haskell_common.extra_libraries_arg() |
         haskell_common.compiler_flags_arg() |
+        haskell_common.ghc_rts_flags_arg() |
         haskell_common.deps_arg() |
         haskell_common.scripts_arg() |
         haskell_common.module_prefix_arg() |
