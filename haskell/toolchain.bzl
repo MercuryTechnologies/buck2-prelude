@@ -45,6 +45,9 @@ HaskellToolchainInfo = provider(
         "worker_single": provider_field(typing.Any, default = False),
         "worker_make": provider_field(bool, default = False),
         "ghc_dir": provider_field(typing.Any, default = None),
+        # RTS options passed to GHC, changing the behavior of the compiler process, not the resulting binaries like
+        # `-with-rtsopts` would.
+        "ghc_rts_flags": provider_field(typing.Any, default = None),
     },
 )
 

@@ -243,6 +243,8 @@ UnitParams = record(
     enable_haddock = field(bool),
     external_tool_paths = field(list[RunInfo]),
     artifact_suffix = field(str),
+    haskell_toolchain = field(HaskellToolchainInfo),
+    compiler_flags = field(list[str]),
 )
 
 # Assemble GHC arguments that are specific to a given unit, but not to a module.
@@ -258,10 +260,8 @@ def unit_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
         "-fwrite-ide-info",
         "-package-env=-",
     )
-    # REVIEW do we want this here? The comment below talks about RTS options, which don't make sense to use here in the
-    # worker context – they would need to be set when executing the worker process.
-    # args.add(arg.haskell_toolchain.compiler_flags)
-    # args.add(arg.compiler_flags)
+    args.add(arg.haskell_toolchain.compiler_flags)
+    args.add(arg.compiler_flags)
     args.add("-this-unit-id", arg.name)
 
     if arg.enable_profiling:
@@ -295,7 +295,6 @@ def unit_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
 
 MetadataUnitParams = record(
     unit = field(UnitParams),
-    haskell_toolchain = field(HaskellToolchainInfo),
     toolchain_libs = field(list[str]),
     deps = field(list[Dependency]),
 )
@@ -316,7 +315,7 @@ def metadata_unit_args(
 
     add_output_dirs(args, output_dir)
 
-    package_flag = _package_flag(arg.haskell_toolchain)
+    package_flag = _package_flag(arg.unit.haskell_toolchain)
     args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
 
     args.add(cmd_args(packages_info.exposed_package_args))
@@ -329,7 +328,6 @@ MetadataParams = record(
     unit = field(MetadataUnitParams),
     direct_deps_link_info = field(list[HaskellLinkInfo]),
     haskell_direct_deps_lib_infos = field(list[HaskellLibraryInfo]),
-    compiler_flags = field(list[str]),
     lib_package_name_and_prefix = field(cmd_args),
     md_gen = field(RunInfo),
     sources = field(list[Artifact]),
@@ -348,7 +346,7 @@ def _dynamic_target_metadata_impl(
     pkg_deps: None | ResolvedDynamicValue) -> list[Provider]:
     munit = arg.unit
     unit = munit.unit
-    haskell_toolchain = munit.haskell_toolchain
+    haskell_toolchain = unit.haskell_toolchain
 
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
@@ -357,7 +355,7 @@ def _dynamic_target_metadata_impl(
         actions,
         munit.deps,
         arg.direct_deps_link_info,
-        munit.haskell_toolchain,
+        haskell_toolchain,
         arg.haskell_direct_deps_lib_infos,
         unit.link_style,
         specify_pkg_version = False,
@@ -502,12 +500,12 @@ def target_metadata(
                     main = main,
                     external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
                     artifact_suffix = get_artifact_suffix(link_style, enable_profiling),
+                    haskell_toolchain = haskell_toolchain,
+                    compiler_flags = ctx.attrs.compiler_flags,
                 ),
-                haskell_toolchain = haskell_toolchain,
                 toolchain_libs = toolchain_libs,
                 deps = ctx.attrs.deps,
             ),
-            compiler_flags = ctx.attrs.compiler_flags,
             direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
             haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
             lib_package_name_and_prefix = _attr_deps_haskell_lib_package_name_and_prefix(ctx, link_style),
@@ -679,6 +677,11 @@ def make_package_env(
     )
     return package_env_file
 
+# Only add RTS argument list markers if the attribute was specified and is nonempty.
+def add_rts_flags(args: cmd_args, flags: None | list[str]):
+    if flags:
+        args.add(["+RTS"] + flags + ["-RTS"])
+
 # Arguments interpreted by `ghc_wrapper` or the worker.
 # Since the worker receives arguments in gRPC requests, there is no executable at the head of the list.
 # The worker does not need to invoke GHC as a subprocess, so `--ghc` is not needed.
@@ -705,6 +708,7 @@ def _common_compile_module_args(
         *,
         arg: struct,
         compiler_flags: list[ArgLike],
+        ghc_rts_flags: list[ArgLike],
         incremental: bool,
         ghc_wrapper: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
@@ -734,6 +738,8 @@ def _common_compile_module_args(
         main = main,
         external_tool_paths = external_tool_paths,
         artifact_suffix = get_artifact_suffix(link_style, enable_profiling),
+        haskell_toolchain = haskell_toolchain,
+        compiler_flags = compiler_flags,
     )
 
     non_haskell_sources = [
@@ -762,8 +768,8 @@ def _common_compile_module_args(
 
         # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
         # be parsed when inside an argsfile.
-        oneshot_wrapper_args.add(haskell_toolchain.compiler_flags)
-        oneshot_wrapper_args.add(compiler_flags)
+        add_rts_flags(oneshot_wrapper_args, haskell_toolchain.ghc_rts_flags)
+        add_rts_flags(oneshot_wrapper_args, ghc_rts_flags)
 
         oneshot_args_for_file.add("-c")
 
@@ -1490,6 +1496,7 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
         actions,
         arg = arg,
         compiler_flags = arg.compiler_flags,
+        ghc_rts_flags = arg.ghc_rts_flags,
         incremental = incremental,
         deps = arg.deps,
         external_tool_paths = arg.external_tool_paths,
@@ -1624,6 +1631,7 @@ def compile(
         arg = struct(
             artifact_suffix = artifact_suffix,
             compiler_flags = ctx.attrs.compiler_flags,
+            ghc_rts_flags = ctx.attrs.ghc_rts_flags,
             deps = ctx.attrs.deps,
             direct_deps_info = direct_deps_info,
             # though this is redundant. for now let's pass them.
