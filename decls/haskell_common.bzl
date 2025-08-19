@@ -36,6 +36,14 @@ def _compiler_flags_arg():
 """),
     }
 
+def _ghc_rts_flags_arg():
+    return {
+        "ghc_rts_flags": attrs.list(attrs.string(), default = [], doc = """
+    RTS options passed to GHC, changing the behavior of the compiler process, not the resulting binaries like
+    `-with-rtsopts` would.
+"""),
+    }
+
 def _exported_linker_flags_arg():
     return {
         "exported_linker_flags": attrs.list(attrs.string(), default = [], doc = """
@@ -109,6 +117,7 @@ haskell_common = struct(
     srcs_arg = _srcs_arg,
     deps_arg = _deps_arg,
     compiler_flags_arg = _compiler_flags_arg,
+    ghc_rts_flags_arg = _ghc_rts_flags_arg,
     exported_linker_flags_arg = _exported_linker_flags_arg,
     scripts_arg = _scripts_arg,
     external_tools_arg = _external_tools_arg,
