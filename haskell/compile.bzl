@@ -235,10 +235,21 @@ def add_output_dirs(args: cmd_args, output_dir: cmd_args):
     for dir in ["o", "hi", "hie", "dump"]:
         args.add("-{}dir".format(dir), output_dir)
 
+UnitParams = record(
+    name = field(str),
+    link_style = field(LinkStyle),
+    enable_profiling = field(bool),
+    main = field(None | str),
+    enable_haddock = field(bool),
+    external_tool_paths = field(list[RunInfo]),
+    artifact_suffix = field(str),
+)
+
 # Assemble GHC arguments that are specific to a given unit, but not to a module.
-# Used for the metadata step as a basis for the non-worker case and as the full argument list for the worker case.
+# Used for the metadata step as a basis for oneshot mode and as the full argument list for the make mode worker.
 # The worker also stores these in the metadata JSON in order to restore the unit state from cache after restarting.
-def unit_args(actions: AnalysisActions, arg: struct) -> cmd_args:
+# In oneshot mode, the compile step also uses these arguments.
+def unit_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
     args = cmd_args(
         "-no-link",
         "-i",
@@ -251,7 +262,7 @@ def unit_args(actions: AnalysisActions, arg: struct) -> cmd_args:
     # worker context – they would need to be set when executing the worker process.
     # args.add(arg.haskell_toolchain.compiler_flags)
     # args.add(arg.compiler_flags)
-    args.add("-this-unit-id", arg.pkgname)
+    args.add("-this-unit-id", arg.name)
 
     if arg.enable_profiling:
         args.add("-prof")
@@ -274,29 +285,34 @@ def unit_args(actions: AnalysisActions, arg: struct) -> cmd_args:
         format = "--bin-exe={}",
     ))
 
-    # TODO
-    # if main != None:
-    #     command.add(["-main-is", main])
-    #
-    # if enable_haddock:
-    #     command.add("-haddock")
+    if arg.main != None:
+        args.add(["-main-is", arg.main])
+
+    if arg.enable_haddock:
+        args.add("-haddock")
 
     return args
 
+MetadataUnitParams = record(
+    unit = field(UnitParams),
+    haskell_toolchain = field(HaskellToolchainInfo),
+    toolchain_libs = field(list[str]),
+    deps = field(list[Dependency]),
+)
+
 def metadata_unit_args(
     actions: AnalysisActions,
-    arg: struct,
+    arg: MetadataUnitParams,
     packages_info: PackagesInfo,
     output: OutputArtifact) -> cmd_args:
 
     # Configure all output directories to use e.g. `mod-shared` next to the metadata file (`output`).
-    artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
     output_dir = cmd_args(
-        [cmd_args(output, ignore_artifacts = True, parent = 1), "mod-" + artifact_suffix],
+        [cmd_args(output, ignore_artifacts = True, parent = 1), "mod-" + arg.unit.artifact_suffix],
         delimiter = "/",
     )
 
-    args = unit_args(actions, arg)
+    args = unit_args(actions, arg.unit)
 
     add_output_dirs(args, output_dir)
 
@@ -309,30 +325,54 @@ def metadata_unit_args(
     args.add("-fpackage-db-byte-code")
     return args
 
-def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provider]:
+MetadataParams = record(
+    unit = field(MetadataUnitParams),
+    direct_deps_link_info = field(list[HaskellLinkInfo]),
+    haskell_direct_deps_lib_infos = field(list[HaskellLibraryInfo]),
+    compiler_flags = field(list[str]),
+    lib_package_name_and_prefix = field(cmd_args),
+    md_gen = field(RunInfo),
+    sources = field(list[Artifact]),
+    strip_prefix = field(str),
+    suffix = field(str),
+    worker = field(None | WorkerInfo),
+    allow_worker = field(bool),
+    label = field(Label | None),
+    incremental = field(bool),
+)
+
+def _dynamic_target_metadata_impl(
+    actions: AnalysisActions,
+    output: OutputArtifact,
+    arg: MetadataParams,
+    pkg_deps: None | ResolvedDynamicValue) -> list[Provider]:
+    munit = arg.unit
+    unit = munit.unit
+    haskell_toolchain = munit.haskell_toolchain
+
     # Add -package-db and -package/-expose-package flags for each Haskell
     # library dependency.
 
     packages_info = get_packages_info(
         actions,
-        arg.deps,
+        munit.deps,
         arg.direct_deps_link_info,
-        arg.haskell_toolchain,
+        munit.haskell_toolchain,
         arg.haskell_direct_deps_lib_infos,
-        arg.link_style,
+        unit.link_style,
         specify_pkg_version = False,
-        enable_profiling = arg.enable_profiling,
+        enable_profiling = unit.enable_profiling,
         use_empty_lib = True,
         for_deps = True,
         pkg_deps = pkg_deps,
     )
-    package_flag = _package_flag(arg.haskell_toolchain)
+    package_flag = _package_flag(haskell_toolchain)
 
-    ghc_args = metadata_unit_args(actions, arg, packages_info, output)
+    ghc_args = metadata_unit_args(actions, munit, packages_info, output)
 
     md_args = cmd_args()
 
-    md_args.add("--ghc", arg.haskell_toolchain.compiler)
+    md_args.add("--ghc", haskell_toolchain.compiler)
     md_args.add(cmd_args(ghc_args, format = "--ghc-arg={}"))
     md_args.add(
         "--source-prefix",
@@ -345,10 +385,9 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
     )
     md_args.add("--output", output)
 
-    haskell_toolchain = arg.haskell_toolchain
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-        build_plan = actions.declare_output(arg.pkgname + ".depends.json")
-        makefile = actions.declare_output(arg.pkgname + ".depends.make")
+        build_plan = actions.declare_output(unit.name + ".depends.json")
+        makefile = actions.declare_output(unit.name + ".depends.make")
 
         ghc_args.add("-include-pkg-deps")
         ghc_args.add("-dep-json", cmd_args(build_plan, ignore_artifacts = True))
@@ -357,20 +396,20 @@ def _dynamic_target_metadata_impl(actions, output, arg, pkg_deps) -> list[Provid
 
         ghc_args_file = argfile(
             actions = actions,
-            name = "haskell_metadata_ghc_{}.args".format(arg.pkgname),
+            name = "haskell_metadata_ghc_{}.args".format(unit.name),
             args = ghc_args,
         )
 
         bp_args = cmd_args()
         bp_args.add("-M")
         bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
-        add_worker_args(haskell_toolchain, bp_args, arg.pkgname)
+        add_worker_args(haskell_toolchain, bp_args, unit.name)
 
         bp_args.add(cmd_args(
-            arg.external_tool_paths,
+            unit.external_tool_paths,
             format = "--bin-exe={}",
         ))
-        bp_args.add(transitive_metadata(actions, arg.pkgname, packages_info))
+        bp_args.add(transitive_metadata(actions, unit.name, packages_info))
         bp_args.add("--unit", unit.name)
         bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
 
@@ -405,7 +444,7 @@ _dynamic_target_metadata = dynamic_actions(
     impl = _dynamic_target_metadata_impl,
     attrs = {
         "output": dynattrs.output(),
-        "arg": dynattrs.value(typing.Any),
+        "arg": dynattrs.value(MetadataParams),
         "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
     },
 )
@@ -415,6 +454,8 @@ def target_metadata(
         *,
         link_style: LinkStyle,
         enable_profiling: bool,
+        enable_haddock: bool,
+        main: None | str,
         sources: list[Artifact],
         worker: WorkerInfo | None) -> Artifact:
     prof_suffix = "-prof" if enable_profiling else ""
@@ -451,26 +492,33 @@ def target_metadata(
     ctx.actions.dynamic_output_new(_dynamic_target_metadata(
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
         output = md_file.as_output(),
-        arg = struct(
+        arg = MetadataParams(
+            unit = MetadataUnitParams(
+                unit = UnitParams(
+                    name = pkgname,
+                    link_style = link_style,
+                    enable_profiling = enable_profiling,
+                    enable_haddock = enable_haddock,
+                    main = main,
+                    external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
+                    artifact_suffix = get_artifact_suffix(link_style, enable_profiling),
+                ),
+                haskell_toolchain = haskell_toolchain,
+                toolchain_libs = toolchain_libs,
+                deps = ctx.attrs.deps,
+            ),
             compiler_flags = ctx.attrs.compiler_flags,
-            deps = ctx.attrs.deps,
             direct_deps_link_info = attr_deps_haskell_link_infos(ctx),
             haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
-            haskell_toolchain = haskell_toolchain,
             lib_package_name_and_prefix = _attr_deps_haskell_lib_package_name_and_prefix(ctx, link_style),
             md_gen = md_gen,
             sources = sources,
-            external_tool_paths = [tool[RunInfo] for tool in ctx.attrs.external_tools],
             strip_prefix = _strip_prefix(str(ctx.label.cell_root), str(ctx.label.path)),
             suffix = link_style.value + ("+prof" if enable_profiling else ""),
-            toolchain_libs = toolchain_libs,
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
-            pkgname = pkgname,
             label = ctx.label,
             incremental = ctx.attrs.incremental,
-            link_style = link_style,
-            enable_profiling = enable_profiling,
         ),
     ))
 
@@ -631,6 +679,9 @@ def make_package_env(
     )
     return package_env_file
 
+# Arguments interpreted by `ghc_wrapper` or the worker.
+# Since the worker receives arguments in gRPC requests, there is no executable at the head of the list.
+# The worker does not need to invoke GHC as a subprocess, so `--ghc` is not needed.
 def _common_compile_wrapper_args(
         ghc_wrapper: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
@@ -649,8 +700,6 @@ def _common_compile_wrapper_args(
 
     return args
 
-# REVIEW I added `arg` as a parameter, is that acceptable?
-# Or should all params be statically known?
 def _common_compile_module_args(
         actions: AnalysisActions,
         *,
@@ -676,6 +725,16 @@ def _common_compile_module_args(
         pkgname: str) -> CommonCompileModuleArgs:
     use_worker = allow_worker and haskell_toolchain.use_worker
     worker_make = use_worker and haskell_toolchain.worker_make
+
+    unit_params = UnitParams(
+        name = pkgname,
+        link_style = link_style,
+        enable_profiling = enable_profiling,
+        enable_haddock = enable_haddock,
+        main = main,
+        external_tool_paths = external_tool_paths,
+        artifact_suffix = get_artifact_suffix(link_style, enable_profiling),
+    )
 
     non_haskell_sources = [
         src
@@ -705,13 +764,6 @@ def _common_compile_module_args(
         # be parsed when inside an argsfile.
         oneshot_wrapper_args.add(haskell_toolchain.compiler_flags)
         oneshot_wrapper_args.add(compiler_flags)
-
-        # TODO these two are also in `unit_args`, still commented
-        if main != None:
-            oneshot_args.add(["-main-is", main])
-
-        if enable_haddock:
-            oneshot_args.add("-haddock")
 
         oneshot_args_for_file.add("-c")
 

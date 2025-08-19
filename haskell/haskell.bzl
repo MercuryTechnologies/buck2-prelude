@@ -1065,6 +1065,8 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 ctx,
                 link_style = link_style,
                 enable_profiling = enable_profiling,
+                enable_haddock = not enable_profiling and not non_profiling_hlib,
+                main = None,
                 sources = ctx.attrs.srcs,
                 worker = worker,
             )
@@ -1437,6 +1439,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         ctx,
         link_style = link_style,
         enable_profiling = enable_profiling,
+        enable_haddock = False,
+        main = getattr(ctx.attrs, "main", None),
         sources = ctx.attrs.srcs,
         worker = worker,
     )
