@@ -461,6 +461,93 @@ def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = 
         suffix = paths.join(suffix, subdir)
     return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
 
+def _write_package_conf(
+    ctx,
+    artifacts,
+    outputs,
+    md_file,
+    libname,
+    arg,
+    ):
+    md = artifacts[md_file].read_json()
+    module_map = md["module_mapping"]
+
+    source_prefixes = get_source_prefixes(ctx.attrs.srcs, module_map)
+    source_prefixes_excluded = [prefix for prefix in source_prefixes if prefix not in ctx.attrs.strip_prefix]
+
+    modules = [
+        module
+        for module in md["module_graph"].keys()
+        if not module.endswith("-boot")
+    ]
+
+    # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
+    #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
+    #     for each exposed module
+    if arg.for_deps:
+        import_dirs = ["."]
+    elif not source_prefixes_excluded:
+        import_dirs = [
+            _mk_artifact_dir("mod", profiled, arg.link_style) for profiled in arg.profiling
+        ]
+    else:
+        import_dirs = [
+            _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix) for profiled in arg.profiling for src_prefix in source_prefixes_excluded
+        ]
+
+    conf = [
+        "name: " + arg.pkgname,
+        "version: 1.0.0",
+        "id: " + arg.pkgname,
+        "key: " + arg.pkgname,
+        "exposed: False",
+        "exposed-modules: " + ", ".join(modules),
+        "import-dirs:" + ", ".join(import_dirs),
+        "depends: " + ", ".join([lib.id for lib in arg.hlis]),
+    ]
+
+    if not arg.use_empty_lib:
+        if not libname:
+            fail("argument `libname` cannot be empty, when use_empty_lib == False")
+
+        if arg.enable_profiling:
+            # Add the `-p` suffix otherwise ghc will look for objects
+            # following this logic (https://fburl.com/code/3gmobm5x) and will fail.
+            libname += "_p"
+
+        library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
+        conf.append("library-dirs:" + ", ".join(library_dirs))
+        conf.append("extra-libraries: " + libname)
+
+    ctx.actions.write(outputs[arg.pkg_conf].as_output(), conf)
+
+    db_deps = [x.db for x in arg.hlis]
+
+    # So that ghc-pkg can find the DBs for the dependencies. We might
+    # be able to use flags for this instead, but this works.
+    ghc_package_path = cmd_args(
+        db_deps,
+        delimiter = ":",
+    )
+
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    ctx.actions.run(
+        cmd_args([
+            "sh",
+            "-c",
+            _REGISTER_PACKAGE,
+            "",
+            haskell_toolchain.packager,
+            outputs[arg.db].as_output(),
+            arg.pkg_conf,
+        ]),
+        category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
+        identifier = "empty" if arg.use_empty_lib else "final",
+        env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
+        # explicit turn this on for local_only actions to upload their results.
+        allow_cache_upload = True,
+    )
+
 
 # Create a package
 #
@@ -517,99 +604,14 @@ def _make_package(
         artifact_suffix = artifact_suffix,
     )
 
-    def _write_package_conf(
-        ctx,
-        artifacts,
-        outputs,
-        md_file = md_file,
-        libname = libname,
-        arg = arg,
-        ):
-        md = artifacts[md_file].read_json()
-        module_map = md["module_mapping"]
-
-        source_prefixes = get_source_prefixes(ctx.attrs.srcs, module_map)
-        source_prefixes_excluded = [prefix for prefix in source_prefixes if prefix not in ctx.attrs.strip_prefix]
-
-        modules = [
-            module
-            for module in md["module_graph"].keys()
-            if not module.endswith("-boot")
-        ]
-
-        # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
-        #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
-        #     for each exposed module
-        if arg.for_deps:
-            import_dirs = ["."]
-        elif not source_prefixes_excluded:
-            import_dirs = [
-                _mk_artifact_dir("mod", profiled, arg.link_style) for profiled in arg.profiling
-            ]
-        else:
-            import_dirs = [
-                _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix) for profiled in arg.profiling for src_prefix in source_prefixes_excluded
-            ]
-
-        conf = [
-            "name: " + arg.pkgname,
-            "version: 1.0.0",
-            "id: " + arg.pkgname,
-            "key: " + arg.pkgname,
-            "exposed: False",
-            "exposed-modules: " + ", ".join(modules),
-            "import-dirs:" + ", ".join(import_dirs),
-            "depends: " + ", ".join([lib.id for lib in arg.hlis]),
-        ]
-
-        if not arg.use_empty_lib:
-            if not libname:
-                fail("argument `libname` cannot be empty, when use_empty_lib == False")
-
-            if arg.enable_profiling:
-                # Add the `-p` suffix otherwise ghc will look for objects
-                # following this logic (https://fburl.com/code/3gmobm5x) and will fail.
-                libname += "_p"
-
-            library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
-            conf.append("library-dirs:" + ", ".join(library_dirs))
-            conf.append("extra-libraries: " + libname)
-
-        ctx.actions.write(outputs[arg.pkg_conf].as_output(), conf)
-
-        db_deps = [x.db for x in arg.hlis]
-
-        # So that ghc-pkg can find the DBs for the dependencies. We might
-        # be able to use flags for this instead, but this works.
-        ghc_package_path = cmd_args(
-            db_deps,
-            delimiter = ":",
-        )
-
-        haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
-        ctx.actions.run(
-            cmd_args([
-                "sh",
-                "-c",
-                _REGISTER_PACKAGE,
-                "",
-                haskell_toolchain.packager,
-                outputs[arg.db].as_output(),
-                arg.pkg_conf,
-            ]),
-            category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
-            identifier = "empty" if arg.use_empty_lib else "final",
-            env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
-            # explicit turn this on for local_only actions to upload their results.
-            allow_cache_upload = True,
-        )
-
+    def _write_package_conf_closure(ctx, artifacts, outputs, md_file = md_file, libname = libname, arg = arg):
+        _write_package_conf(ctx, artifacts, outputs, md_file, libname, arg)
 
     ctx.actions.dynamic_output(
         dynamic = [md_file],
         inputs = [],
         outputs = [pkg_conf.as_output(), db.as_output()],
-        f = _write_package_conf
+        f = _write_package_conf_closure,
     )
 
     return db
