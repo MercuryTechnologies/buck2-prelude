@@ -455,6 +455,13 @@ PKGCONF=$3
 "$GHC_PKG" register --package-conf "$DB" --no-expand-pkgroot "$PKGCONF" --force -v0
 """
 
+def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = "") -> str:
+    suffix = get_artifact_suffix(link_style, profiled)
+    if subdir:
+        suffix = paths.join(suffix, subdir)
+    return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
+
+
 # Create a package
 #
 # The way we use packages is a bit strange. We're not using them
@@ -487,12 +494,6 @@ def _make_package(
         for_deps: bool = False) -> Artifact:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
-    def mk_artifact_dir(dir_prefix: str, profiled: bool, subdir: str = "") -> str:
-        suffix = get_artifact_suffix(link_style, profiled)
-        if subdir:
-            suffix = paths.join(suffix, subdir)
-        return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
-
     if for_deps:
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + "_deps.conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix + "_deps", dir = True)
@@ -503,7 +504,27 @@ def _make_package(
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + ".conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
 
-    def write_package_conf(ctx, artifacts, outputs, md_file=md_file, libname=libname):
+    arg = struct(
+        for_deps = for_deps,
+        profiling = profiling,
+        link_style = link_style,
+        pkgname = pkgname,
+        hlis = hlis,
+        use_empty_lib = use_empty_lib,
+        enable_profiling = enable_profiling,
+        pkg_conf = pkg_conf,
+        db = db,
+        artifact_suffix = artifact_suffix,
+    )
+
+    def _write_package_conf(
+        ctx,
+        artifacts,
+        outputs,
+        md_file = md_file,
+        libname = libname,
+        arg = arg,
+        ):
         md = artifacts[md_file].read_json()
         module_map = md["module_mapping"]
 
@@ -519,44 +540,44 @@ def _make_package(
         # XXX use a single import dir when this package db is used for resolving dependencies with ghc -M,
         #     which works around an issue with multiple import dirs resulting in GHC trying to locate interface files
         #     for each exposed module
-        if for_deps:
+        if arg.for_deps:
             import_dirs = ["."]
         elif not source_prefixes_excluded:
             import_dirs = [
-                mk_artifact_dir("mod", profiled) for profiled in profiling
+                _mk_artifact_dir("mod", profiled, arg.link_style) for profiled in arg.profiling
             ]
         else:
             import_dirs = [
-                mk_artifact_dir("mod", profiled, src_prefix) for profiled in profiling for src_prefix in source_prefixes_excluded
+                _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix) for profiled in arg.profiling for src_prefix in source_prefixes_excluded
             ]
 
         conf = [
-            "name: " + pkgname,
+            "name: " + arg.pkgname,
             "version: 1.0.0",
-            "id: " + pkgname,
-            "key: " + pkgname,
+            "id: " + arg.pkgname,
+            "key: " + arg.pkgname,
             "exposed: False",
             "exposed-modules: " + ", ".join(modules),
             "import-dirs:" + ", ".join(import_dirs),
-            "depends: " + ", ".join([lib.id for lib in hlis]),
+            "depends: " + ", ".join([lib.id for lib in arg.hlis]),
         ]
 
-        if not use_empty_lib:
+        if not arg.use_empty_lib:
             if not libname:
                 fail("argument `libname` cannot be empty, when use_empty_lib == False")
 
-            if enable_profiling:
+            if arg.enable_profiling:
                 # Add the `-p` suffix otherwise ghc will look for objects
                 # following this logic (https://fburl.com/code/3gmobm5x) and will fail.
                 libname += "_p"
 
-            library_dirs = [mk_artifact_dir("lib", profiled) for profiled in profiling]
+            library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
             conf.append("library-dirs:" + ", ".join(library_dirs))
             conf.append("extra-libraries: " + libname)
 
-        ctx.actions.write(outputs[pkg_conf].as_output(), conf)
+        ctx.actions.write(outputs[arg.pkg_conf].as_output(), conf)
 
-        db_deps = [x.db for x in hlis]
+        db_deps = [x.db for x in arg.hlis]
 
         # So that ghc-pkg can find the DBs for the dependencies. We might
         # be able to use flags for this instead, but this works.
@@ -573,21 +594,22 @@ def _make_package(
                 _REGISTER_PACKAGE,
                 "",
                 haskell_toolchain.packager,
-                outputs[db].as_output(),
-                pkg_conf,
+                outputs[arg.db].as_output(),
+                arg.pkg_conf,
             ]),
-            category = "haskell_package_" + artifact_suffix.replace("-", "_"),
-            identifier = "empty" if use_empty_lib else "final",
+            category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
+            identifier = "empty" if arg.use_empty_lib else "final",
             env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
             # explicit turn this on for local_only actions to upload their results.
             allow_cache_upload = True,
         )
 
+
     ctx.actions.dynamic_output(
         dynamic = [md_file],
         inputs = [],
         outputs = [pkg_conf.as_output(), db.as_output()],
-        f = write_package_conf
+        f = _write_package_conf
     )
 
     return db
