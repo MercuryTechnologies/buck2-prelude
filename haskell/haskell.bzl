@@ -462,7 +462,7 @@ def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = 
     return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
 
 def _write_package_conf(
-    ctx,
+    actions,
     artifacts,
     outputs,
     md_file,
@@ -472,8 +472,8 @@ def _write_package_conf(
     md = artifacts[md_file].read_json()
     module_map = md["module_mapping"]
 
-    source_prefixes = get_source_prefixes(ctx.attrs.srcs, module_map)
-    source_prefixes_excluded = [prefix for prefix in source_prefixes if prefix not in ctx.attrs.strip_prefix]
+    source_prefixes = get_source_prefixes(arg.srcs, module_map)
+    source_prefixes_excluded = [prefix for prefix in source_prefixes if prefix not in arg.strip_prefix]
 
     modules = [
         module
@@ -519,7 +519,7 @@ def _write_package_conf(
         conf.append("library-dirs:" + ", ".join(library_dirs))
         conf.append("extra-libraries: " + libname)
 
-    ctx.actions.write(outputs[arg.pkg_conf].as_output(), conf)
+    actions.write(outputs[arg.pkg_conf].as_output(), conf)
 
     db_deps = [x.db for x in arg.hlis]
 
@@ -530,14 +530,13 @@ def _write_package_conf(
         delimiter = ":",
     )
 
-    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
-    ctx.actions.run(
+    actions.run(
         cmd_args([
             "sh",
             "-c",
             _REGISTER_PACKAGE,
             "",
-            haskell_toolchain.packager,
+            arg.haskell_toolchain.packager,
             outputs[arg.db].as_output(),
             arg.pkg_conf,
         ]),
@@ -602,10 +601,13 @@ def _make_package(
         pkg_conf = pkg_conf,
         db = db,
         artifact_suffix = artifact_suffix,
+        srcs = ctx.attrs.srcs,
+        strip_prefix = ctx.attrs.strip_prefix,
+        haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     )
 
     def _write_package_conf_closure(ctx, artifacts, outputs, md_file = md_file, libname = libname, arg = arg):
-        _write_package_conf(ctx, artifacts, outputs, md_file, libname, arg)
+        _write_package_conf(ctx.actions, artifacts, outputs, md_file, libname, arg)
 
     ctx.actions.dynamic_output(
         dynamic = [md_file],
