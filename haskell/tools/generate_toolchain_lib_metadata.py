@@ -15,7 +15,16 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--package-name", required=True, type=str, help="Read info about this package."
+        "--ghc-pkg",
+        required=True,
+        type=str,
+        help="Path to ghc-pkg",
+    )
+    parser.add_argument(
+        "--package-name",
+        required=True,
+        type=str,
+        help="Read info about this package.",
     )
     parser.add_argument(
         "--package-dir",
@@ -31,7 +40,7 @@ def main():
     )
 
     args = parser.parse_args()
-    result = obtain_lib_metadata(args.package_name, args.package_dir)
+    result = obtain_lib_metadata(args.ghc_pkg, args.package_name, args.package_dir)
 
     json.dump(result, args.output, indent=4, default=json_default_handler)
 
@@ -42,20 +51,23 @@ def json_default_handler(o):
     raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
 
-def obtain_lib_metadata(package_name, pkgdb):
-    exposed_modules = determine_exposed_modules(package_name, pkgdb)
-    return {"exposed_modules": exposed_modules}
+def obtain_lib_metadata(ghc_pkg, package_name, pkgdb):
+    package_id = determine_id(ghc_pkg, package_name, pkgdb)
+    exposed_modules = determine_exposed_modules(ghc_pkg, package_name, pkgdb)
+    return {
+        "exposed_modules": exposed_modules,
+    }
 
 
-def determine_exposed_modules(package_name, pkgdb):
+def determine_exposed_modules(ghc_pkg, package_name, pkgdb):
     package_data = run_ghc_pkg(
-        "field", pkgdb, args=[package_name, "exposed-modules", "--simple-output"]
+        ghc_pkg, "field", pkgdb, args=[package_name, "exposed-modules", "--simple-output"]
     )
     return package_data.split()
 
 
-def run_ghc_pkg(cmd, pkgdb=None, args=[]):
-    outer_args = ["ghc-pkg", cmd] + args
+def run_ghc_pkg(ghc_pkg, cmd, pkgdb=None, args=[]):
+    outer_args = [ghc_pkg, cmd] + args
     if pkgdb:
         outer_args += [f"--package-db={pkgdb}"]
 
