@@ -179,10 +179,16 @@ def _attr_preferred_linkage(ctx: AnalysisContext) -> Linkage:
 
 # --
 
-def _toolchain_target_metadata_impl(actions, output, libname, pkg_deps, md_gen) -> list[Provider]:
+def _toolchain_target_metadata_impl(
+    actions,
+    haskell_toolchain,
+    output,
+    libname,
+    pkg_deps,
+    md_gen) -> list[Provider]:
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
-    md_args = cmd_args(md_gen, "--package-name", libname, "--output", output)
+    md_args = cmd_args(md_gen, "--ghc-pkg", haskell_toolchain.packager, "--package-name", libname, "--output", output)
     if libname in package_db:
         pkg = package_db[libname].reduce("root")
         md_args.add("--package-dir", pkg.db)
@@ -198,6 +204,7 @@ def _toolchain_target_metadata_impl(actions, output, libname, pkg_deps, md_gen) 
 _toolchain_target_metadata = dynamic_actions(
     impl = _toolchain_target_metadata_impl,
     attrs = {
+        "haskell_toolchain": dynattrs.value(typing.Any),
         "output": dynattrs.output(),
         "libname": dynattrs.value(typing.Any),
         "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
@@ -210,7 +217,8 @@ def haskell_toolchain_library_impl(ctx: AnalysisContext):
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
     ctx.actions.dynamic_output_new(
-        _toolchain_target_metadata(output=md_file.as_output(),
+        _toolchain_target_metadata(haskell_toolchain=haskell_toolchain,
+                                   output=md_file.as_output(),
                                    libname=ctx.attrs.name,
                                    pkg_deps=pkg_deps,
                                    md_gen=ctx.attrs._generate_toolchain_lib_metadata[RunInfo],
