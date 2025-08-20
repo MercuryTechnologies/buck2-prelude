@@ -455,21 +455,55 @@ PKGCONF=$3
 "$GHC_PKG" register --package-conf "$DB" --no-expand-pkgroot "$PKGCONF" --force -v0
 """
 
+def _register_package_conf(
+    actions,
+    pkg_conf,
+    db,
+    arg,
+    ):
+
+    db_deps = [x.db for x in arg.hlis]
+
+    # So that ghc-pkg can find the DBs for the dependencies. We might
+    # be able to use flags for this instead, but this works.
+    ghc_package_path = cmd_args(
+        db_deps,
+        delimiter = ":",
+    )
+
+    actions.run(
+        cmd_args([
+            "sh",
+            "-c",
+            _REGISTER_PACKAGE,
+            "",
+            arg.haskell_toolchain.packager,
+            db,
+            pkg_conf,
+        ]),
+        category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
+        identifier = "empty" if arg.use_empty_lib else "final",
+        env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
+        # explicit turn this on for local_only actions to upload their results.
+        allow_cache_upload = True,
+    )
+
 def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = "") -> str:
     suffix = get_artifact_suffix(link_style, profiled)
     if subdir:
         suffix = paths.join(suffix, subdir)
     return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
 
-def _write_package_conf(
+
+def _write_package_conf_impl(
     actions,
-    artifacts,
-    outputs,
     md_file,
+    pkg_conf,
+    db,
     libname,
     arg,
-    ):
-    md = artifacts[md_file].read_json()
+    ) -> list[Provider]:
+    md = md_file.read_json()
     module_map = md["module_mapping"]
 
     source_prefixes = get_source_prefixes(arg.srcs, module_map)
@@ -519,34 +553,22 @@ def _write_package_conf(
         conf.append("library-dirs:" + ", ".join(library_dirs))
         conf.append("extra-libraries: " + libname)
 
-    actions.write(outputs[arg.pkg_conf].as_output(), conf)
+    pkg_conf_artifact = actions.write(pkg_conf, conf)
+    _register_package_conf(actions, pkg_conf_artifact, db, arg)
 
-    db_deps = [x.db for x in arg.hlis]
+    return []
 
-    # So that ghc-pkg can find the DBs for the dependencies. We might
-    # be able to use flags for this instead, but this works.
-    ghc_package_path = cmd_args(
-        db_deps,
-        delimiter = ":",
-    )
 
-    actions.run(
-        cmd_args([
-            "sh",
-            "-c",
-            _REGISTER_PACKAGE,
-            "",
-            arg.haskell_toolchain.packager,
-            outputs[arg.db].as_output(),
-            arg.pkg_conf,
-        ]),
-        category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
-        identifier = "empty" if arg.use_empty_lib else "final",
-        env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
-        # explicit turn this on for local_only actions to upload their results.
-        allow_cache_upload = True,
-    )
-
+_write_package_conf = dynamic_actions(
+    impl = _write_package_conf_impl,
+    attrs = {
+        "md_file": dynattrs.artifact_value(),
+        "pkg_conf": dynattrs.output(),
+        "db": dynattrs.output(),
+        "libname": dynattrs.value(typing.Any),
+        "arg": dynattrs.value(typing.Any),
+    },
+)
 
 # Create a package
 #
@@ -598,22 +620,20 @@ def _make_package(
         hlis = hlis,
         use_empty_lib = use_empty_lib,
         enable_profiling = enable_profiling,
-        pkg_conf = pkg_conf,
-        db = db,
         artifact_suffix = artifact_suffix,
         srcs = ctx.attrs.srcs,
         strip_prefix = ctx.attrs.strip_prefix,
         haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     )
 
-    def _write_package_conf_closure(ctx, artifacts, outputs, md_file = md_file, libname = libname, arg = arg):
-        _write_package_conf(ctx.actions, artifacts, outputs, md_file, libname, arg)
-
-    ctx.actions.dynamic_output(
-        dynamic = [md_file],
-        inputs = [],
-        outputs = [pkg_conf.as_output(), db.as_output()],
-        f = _write_package_conf_closure,
+    ctx.actions.dynamic_output_new(
+        _write_package_conf(
+            md_file = md_file,
+            pkg_conf = pkg_conf.as_output(),
+            db = db.as_output(),
+            libname = libname,
+            arg = arg,
+        )
     )
 
     return db
