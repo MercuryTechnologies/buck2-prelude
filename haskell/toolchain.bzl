@@ -51,6 +51,13 @@ HaskellToolchainInfo = provider(
 HaskellToolchainLibrary = provider(
     fields = {
         "name": provider_field(str),
+        "dynamic": DynamicValue,
+    },
+)
+
+DynamicHaskellToolchainLibraryInfo = provider(
+    fields = {
+        "id": provider_field(str),
     },
 )
 

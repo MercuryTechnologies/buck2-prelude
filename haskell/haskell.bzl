@@ -80,6 +80,7 @@ load(
     "@prelude//haskell:toolchain.bzl",
     "HaskellToolchainInfo",
     "HaskellToolchainLibrary",
+    "DynamicHaskellToolchainLibraryInfo",
     "HaskellPackageDbTSet",
     "DynamicHaskellPackageDbInfo",
     "NativeToolchainLibrary",
@@ -212,6 +213,23 @@ _toolchain_target_metadata = dynamic_actions(
     },
 )
 
+
+def _get_toolchain_haskell_package_id_impl(
+    actions,
+    md_file: ArtifactValue) -> list[Provider]:
+    md  = md_file.read_json()
+    package_id = md["id"]
+    return [DynamicHaskellToolchainLibraryInfo(id = package_id)]
+
+
+_get_toolchain_haskell_package_id = dynamic_actions(
+    impl = _get_toolchain_haskell_package_id_impl,
+    attrs = {
+        "md_file": dynattrs.artifact_value(),
+    },
+)
+
+
 def haskell_toolchain_library_impl(ctx: AnalysisContext):
     md_file = ctx.actions.declare_output(ctx.label.name + ".md.json")
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
@@ -224,10 +242,16 @@ def haskell_toolchain_library_impl(ctx: AnalysisContext):
                                    md_gen=ctx.attrs._generate_toolchain_lib_metadata[RunInfo],
                                    )
     )
+    dynamic = ctx.actions.dynamic_output_new(
+        _get_toolchain_haskell_package_id(md_file=md_file),
+    )
     sub_targets = { "metadata": [DefaultInfo(default_output = md_file)] }
     return [
         DefaultInfo(sub_targets = sub_targets),
-        HaskellToolchainLibrary(name = ctx.attrs.name)
+        HaskellToolchainLibrary(
+            name = ctx.attrs.name,
+            dynamic = dynamic,
+        )
     ]
 
 # --
@@ -506,6 +530,7 @@ def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = 
 def _write_package_conf_impl(
     actions,
     md_file,
+    toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
     pkg_conf,
     db,
     libname,
@@ -537,6 +562,8 @@ def _write_package_conf_impl(
             _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix) for profiled in arg.profiling for src_prefix in source_prefixes_excluded
         ]
 
+    toolchain_lib_ids = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
+
     conf = [
         "name: " + arg.pkgname,
         "version: 1.0.0",
@@ -545,7 +572,7 @@ def _write_package_conf_impl(
         "exposed: False",
         "exposed-modules: " + ", ".join(modules),
         "import-dirs:" + ", ".join(import_dirs),
-        "depends: " + ", ".join([lib.id for lib in arg.hlis]),
+        "depends: " + ", ".join(toolchain_lib_ids + [lib.id for lib in arg.hlis]),
     ]
 
     if not arg.use_empty_lib:
@@ -571,6 +598,7 @@ _write_package_conf = dynamic_actions(
     impl = _write_package_conf_impl,
     attrs = {
         "md_file": dynattrs.artifact_value(),
+        "toolchain_lib_dyn_infos": dynattrs.list(dynattrs.dynamic_value()),
         "pkg_conf": dynattrs.output(),
         "db": dynattrs.output(),
         "libname": dynattrs.value(typing.Any),
@@ -631,12 +659,16 @@ def _make_package(
         artifact_suffix = artifact_suffix,
         srcs = ctx.attrs.srcs,
         strip_prefix = ctx.attrs.strip_prefix,
-        haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+        haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo],
     )
+
+    toolchain_libs = attr_deps_haskell_toolchain_libraries(ctx)
+    toolchain_lib_dyn_infos = [dep.dynamic for dep in toolchain_libs]
 
     ctx.actions.dynamic_output_new(
         _write_package_conf(
             md_file = md_file,
+            toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
             pkg_conf = pkg_conf.as_output(),
             db = db.as_output(),
             libname = libname,

@@ -55,8 +55,16 @@ def obtain_lib_metadata(ghc_pkg, package_name, pkgdb):
     package_id = determine_id(ghc_pkg, package_name, pkgdb)
     exposed_modules = determine_exposed_modules(ghc_pkg, package_name, pkgdb)
     return {
+        "id": package_id,
         "exposed_modules": exposed_modules,
     }
+
+
+def determine_id(ghc_pkg, package_name, pkgdb):
+    package_id = run_ghc_pkg(
+        ghc_pkg, "field", pkgdb, args=[package_name, "id", "--simple-output"]
+    )
+    return package_id.strip()
 
 
 def determine_exposed_modules(ghc_pkg, package_name, pkgdb):
