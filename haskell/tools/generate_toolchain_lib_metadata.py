@@ -70,8 +70,19 @@ def determine_id(ghc_pkg, package_name, pkgdb):
 def determine_exposed_modules(ghc_pkg, package_name, pkgdb):
     package_data = run_ghc_pkg(
         ghc_pkg, "field", pkgdb, args=[package_name, "exposed-modules", "--simple-output"]
-    )
-    return package_data.split()
+    ).strip()
+    if ',' in package_data:
+        # See https://gitlab.haskell.org/ghc/ghc/-/issues/26351
+        # If commas are present then the package probably uses module
+        # re-exports, which causes ghc-pkg to use a more complex syntax, which
+        # looks like eg
+        #
+        #   Foo.Bar, Foo.Baz, Foo.Quux from foo-quux-1.0.0-pkgid:Foo.Quux"
+        #
+        # We only care about the module names here.
+        return [m.split(' ')[0] for m in package_data.split(', ')]
+    else:
+        return package_data.split()
 
 
 def run_ghc_pkg(ghc_pkg, cmd, pkgdb=None, args=[]):
