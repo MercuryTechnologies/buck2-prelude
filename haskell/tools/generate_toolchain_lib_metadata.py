@@ -70,7 +70,7 @@ def determine_id(ghc_pkg, package_name, pkgdb):
 def determine_exposed_modules(ghc_pkg, package_name, pkgdb):
     package_data = run_ghc_pkg(
         ghc_pkg, "field", pkgdb, args=[package_name, "exposed-modules", "--simple-output"]
-    )
+    ).strip()
     if ',' in package_data:
         # See https://gitlab.haskell.org/ghc/ghc/-/issues/26351
         # If commas are present then the package probably uses module
