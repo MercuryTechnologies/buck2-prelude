@@ -591,7 +591,7 @@ def _common_compile_module_args(
     ]
 
     if non_haskell_sources:
-        warning("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead".format(label))
+        warning("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead: {}".format(label, non_haskell_sources))
 
     args_for_file = cmd_args(hidden = non_haskell_sources)
 
