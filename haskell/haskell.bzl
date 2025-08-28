@@ -705,10 +705,15 @@ def _get_haskell_shared_library_name_linker_flags(
 def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
+    libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
+    all_deps = libs.reduce("packages")
     package_db_tset = actions.tset(
         HaskellPackageDbTSet,
-        children = [package_db[name] for name in arg.toolchain_libs if name in package_db]
+        children = [package_db[name] for name in (arg.toolchain_libs + all_deps) if name in package_db]
     )
+
+    packagedb_args = cmd_args(libs.project_as_args("package_db"))
+    packagedb_args.add(package_db_tset.project_as_args("package_db"))
 
     link_args = cmd_args()
     link_cmd_args = [cmd_args(arg.haskell_toolchain.linker)]
@@ -717,7 +722,12 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     link_args.add(arg.haskell_toolchain.linker_flags)
     link_args.add(arg.linker_flags)
     link_args.add("-hide-all-packages")
+    link_args.add(cmd_args(packagedb_args, prepend = "-package-db"))
+
     link_args.add(cmd_args(arg.toolchain_libs, prepend = "-package"))
+    for item in arg.haskell_direct_deps_lib_infos:
+        link_args.add(cmd_args(item.name, prepend = "-package"))
+
     link_args.add(cmd_args(package_db_tset.project_as_args("package_db"), prepend="-package-db"))
     link_args.add(
         get_shared_library_flags(arg.linker_info.type),
@@ -838,6 +848,16 @@ def _build_haskell_lib(
             to_link_strategy(link_style),
         )
 
+        haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
+            ctx,
+            link_style,
+            enable_profiling = enable_profiling,
+        )
+        direct_deps_info = [
+            lib.prof_info[link_style] if enable_profiling else lib.info[link_style]
+            for lib in attr_deps_haskell_link_infos(ctx)
+        ]
+
         ctx.actions.dynamic_output_new(_dynamic_link_shared(
             pkg_deps = haskell_toolchain.packages.dynamic,
             lib = lib.as_output(),
@@ -845,6 +865,9 @@ def _build_haskell_lib(
                 artifact_suffix = artifact_suffix,
                 haskell_toolchain = haskell_toolchain,
                 infos = infos,
+
+                haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
+                direct_deps_info = direct_deps_info,
                 lib = lib,
                 libfile = libfile,
                 linker_flags = ctx.attrs.linker_flags,
