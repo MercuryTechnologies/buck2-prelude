@@ -244,7 +244,7 @@ UnitParams = record(
     external_tool_paths = field(list[RunInfo]),
     artifact_suffix = field(str),
     haskell_toolchain = field(HaskellToolchainInfo),
-    compiler_flags = field(list[str]),
+    compiler_flags = field(list[str | ResolvedStringWithMacros]),
 )
 
 # Assemble GHC arguments that are specific to a given unit, but not to a module.
