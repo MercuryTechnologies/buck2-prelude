@@ -251,7 +251,7 @@ UnitParams = record(
 # Used for the metadata step as a basis for oneshot mode and as the full argument list for the make mode worker.
 # The worker also stores these in the metadata JSON in order to restore the unit state from cache after restarting.
 # In oneshot mode, the compile step also uses these arguments.
-def unit_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
+def unit_ghc_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
     args = cmd_args(
         "-no-link",
         "-i",
@@ -280,17 +280,20 @@ def unit_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
     osuf, hisuf = output_extensions(arg.link_style, arg.enable_profiling)
     args.add("-osuf", osuf, "-hisuf", hisuf)
 
-    args.add(cmd_args(
-        arg.external_tool_paths,
-        format = "--bin-exe={}",
-    ))
-
     if arg.main != None:
         args.add(["-main-is", arg.main])
 
     if arg.enable_haddock:
         args.add("-haddock")
 
+    return args
+
+def unit_buck2_args(actions: AnalysisActions, arg: UnitParams) -> cmd_args:
+    args = cmd_args()
+    args.add(cmd_args(
+        arg.external_tool_paths,
+        format = "--bin-exe={}",
+    ))
     return args
 
 MetadataUnitParams = record(
@@ -303,7 +306,7 @@ def metadata_unit_args(
     actions: AnalysisActions,
     arg: MetadataUnitParams,
     packages_info: PackagesInfo,
-    output: OutputArtifact) -> cmd_args:
+    output: OutputArtifact) -> (cmd_args, cmd_args):
 
     # Configure all output directories to use e.g. `mod-shared` next to the metadata file (`output`).
     output_dir = cmd_args(
@@ -311,18 +314,21 @@ def metadata_unit_args(
         delimiter = "/",
     )
 
-    args = unit_args(actions, arg.unit)
+    ghc_args = unit_ghc_args(actions, arg.unit)
 
-    add_output_dirs(args, output_dir)
+    add_output_dirs(ghc_args, output_dir)
 
     package_flag = _package_flag(arg.unit.haskell_toolchain)
-    args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
+    ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
 
-    args.add(cmd_args(packages_info.exposed_package_args))
-    args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
-    args.add("-fprefer-byte-code")
-    args.add("-fpackage-db-byte-code")
-    return args
+    ghc_args.add(cmd_args(packages_info.exposed_package_args))
+    ghc_args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
+    ghc_args.add("-fprefer-byte-code")
+    ghc_args.add("-fpackage-db-byte-code")
+
+    buck2_args = unit_buck2_args(actions, arg.unit)
+
+    return (ghc_args, buck2_args)
 
 MetadataParams = record(
     unit = field(MetadataUnitParams),
@@ -367,7 +373,7 @@ def _dynamic_target_metadata_impl(
     )
     package_flag = _package_flag(haskell_toolchain)
 
-    ghc_args = metadata_unit_args(actions, munit, packages_info, output)
+    (ghc_args, buck2_args) = metadata_unit_args(actions, munit, packages_info, output)
 
     md_args = cmd_args()
 
@@ -383,6 +389,7 @@ def _dynamic_target_metadata_impl(
     md_args.add("--source-prefix", arg.strip_prefix)
     md_args.add(arg.lib_package_name_and_prefix)
     md_args.add("--output", output)
+    md_args.add(buck2_args)
 
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
         build_plan = actions.declare_output(unit.name + ".depends.json")
@@ -760,11 +767,11 @@ def _common_compile_module_args(
     args_for_file = cmd_args([], hidden = non_haskell_sources)
 
     # These arguments are only for oneshot mode, as opposed to the worker's make mode.
-    oneshot_args_for_file = unit_args(actions, unit_params)
+    oneshot_args_for_file = unit_ghc_args(actions, unit_params)
 
     # Also oneshot-specific, but either consumed by `ghc_wrapper` or impossible to be passed as a response file, like
     # RTS options.
-    oneshot_wrapper_args = cmd_args()
+    oneshot_wrapper_args = unit_buck2_args(actions, unit_params)
 
     # These arguments are not intended for GHC, but for either `ghc_wrapper` or the worker.
     command = _common_compile_wrapper_args(ghc_wrapper, haskell_toolchain, pkgname, use_worker)
