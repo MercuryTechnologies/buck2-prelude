@@ -1111,6 +1111,7 @@ def _compile_module(
             "abi": abi_tag,
         }
     else:
+        compile_args_for_file.add(common_args.oneshot_args_for_file)
         compile_args_for_file.add(_compile_oneshot_args(
             actions,
             common_args = common_args,
@@ -1138,7 +1139,6 @@ def _compile_module(
             packagedb_tag = packagedb_tag,
         ))
 
-        compile_args_for_file.add(common_args.oneshot_args_for_file)
         compile_cmd_args.append(common_args.oneshot_wrapper_args)
 
         dep_files = {
