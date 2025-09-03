@@ -1073,6 +1073,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     # The non-profiling library is also needed to build the package with
     # profiling enabled, so we need to keep track of it for each link style.
     non_profiling_hlib = {}
+    def_md_file = None
     for enable_profiling in [False, True]:
         for output_style in get_output_styles_for_linkage(preferred_linkage):
             link_style = legacy_output_style_to_link_style(output_style)
@@ -1093,6 +1094,8 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 sources = ctx.attrs.srcs,
                 worker = worker,
             )
+            if link_style == LinkStyle("shared") and not enable_profiling:
+                def_md_file = md_file
 
             hlib_build_out = _build_haskell_lib(
                 ctx,
@@ -1148,6 +1151,10 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                         enable_profiling = enable_profiling,
                     ) | dict(metadata = [DefaultInfo(default_output = md_file)]),
                 )]
+
+    # By default, [metadata] = [shared][metadata].
+    if def_md_file:
+        sub_targets["metadata"] = [DefaultInfo(default_output = def_md_file)]
 
     pic_behavior = ctx.attrs._cxx_toolchain[CxxToolchainInfo].pic_behavior
     link_style = cxx_toolchain_link_style(ctx)
