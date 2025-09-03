@@ -397,6 +397,7 @@ def _dynamic_target_metadata_impl(
             actions = actions,
             name = "haskell_metadata_ghc_{}.args".format(unit.name),
             args = ghc_args,
+            allow_args = True,
         )
 
         bp_args = cmd_args()
