@@ -430,7 +430,7 @@ def _dynamic_target_metadata_impl(
         md_args.add("--unit-args", ghc_args_file)
 
     # pass the cell root directory as the working directory for ghc
-    md_args_outer = cmd_args(arg.md_gen, "--cwd", arg.cell_root, md_args)
+    md_args_outer = cmd_args(arg.md_gen, "--cwd", arg.cell_root)
     md_args_outer.add(at_argfile(
         actions = actions,
         name = "dynamic_target_metadata_args",
