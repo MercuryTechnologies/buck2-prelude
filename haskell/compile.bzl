@@ -162,11 +162,13 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
         if module_prefix:
             short_path_stripped = module_prefix.replace(".", "/") + "/" + src.short_path
             interface_path = paths.replace_extension(short_path_stripped, "." + hisuf + bootsuf)
+            module_name = "{}.{}".format(module_prefix, module_name)
         else:
             s = src.short_path
             for prefix in ctx.attrs.strip_prefix:
                 s1 = strip_prefix(prefix, src.short_path)
                 if s1 != None:
+                    module_name = _strip_prefix(".", _strip_prefix(prefix.replace("/", "."), module_name))
                     s = s1
                     break
             short_path_stripped = _strip_prefix("/", s)
