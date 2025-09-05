@@ -907,7 +907,7 @@ def _compile_oneshot_args(
         if NativeToolchainLibrary in lib
     ]
     for l in extra_libs:
-        args.add(l.lib_path)
+        args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         args.add("-l{}".format(l.name))
 
     args.add(
@@ -1280,7 +1280,7 @@ def compile_args(
         if NativeToolchainLibrary in lib
     ]
     for l in extra_libs:
-        compile_cmd.add(l.lib_path)
+        compile_cmd.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         compile_cmd.add("-l{}".format(l.name))
 
     compile_cmd.add("-fbyte-code-and-object-code")
