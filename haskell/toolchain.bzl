@@ -94,6 +94,7 @@ DynamicHaskellPackageDbInfo = provider(fields = {
 NativeToolchainLibrary = provider(
     fields = {
         "name": provider_field(str),
-        "lib_path": provider_field(typing.Any, default = None),
+        "lib_root": provider_field(Artifact),
+        "rel_path_to_root": provider_field(str),
     },
 )
