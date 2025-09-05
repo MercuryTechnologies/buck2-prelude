@@ -597,7 +597,7 @@ def _write_package_conf_impl(
 
         library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
         conf.add(cmd_args(library_dirs, delimiter = ",", format = "library-dirs: {}"))
-        conf.add(cmd_args(libname, format = "extra-libraries: {}"))
+        conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
     # extra-libraries
     extra_libs = [
@@ -838,12 +838,14 @@ def _build_haskell_lib(
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
     libstem = libname
-    if link_style == LinkStyle("static_pic"):
-        libstem += "_pic"
 
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
     static_lib_suffix = "_p.a" if enable_profiling else ".a"
-    libfile = "lib" + libstem + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
+    if link_style == LinkStyle("shared"):
+        compiler_suffix = "-ghc{}".format(haskell_toolchain.compiler_major_version)
+    else:
+        compiler_suffix = ""
+    libfile = "lib" + libstem + compiler_suffix + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
 
     lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
 
@@ -1084,10 +1086,11 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
         libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
         # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
         if libprefix[-1] == '_':
-            libname = libprefix + ctx.label.name
+            libname0 = libprefix + ctx.label.name
         else:
-            libname = libprefix + "_" + ctx.label.name
-        pkgname = libname.replace("_", "-")
+            libname0 = libprefix + "_" + ctx.label.name
+        pkgname = libname0.replace("_", "-")
+        libname = "HS" + pkgname
 
     worker = ctx.attrs._worker[WorkerInfo] if ctx.attrs._worker else None
 
