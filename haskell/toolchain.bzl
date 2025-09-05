@@ -42,7 +42,6 @@ HaskellToolchainInfo = provider(
         "packages": provider_field(typing.Any, default = None),
         "use_persistent_workers": provider_field(typing.Any, default = None),
         "use_worker": provider_field(bool, default = False),
-        "worker_single": provider_field(typing.Any, default = False),
         "worker_make": provider_field(bool, default = False),
         "ghc_dir": provider_field(typing.Any, default = None),
         # RTS options passed to GHC, changing the behavior of the compiler process, not the resulting binaries like
