@@ -566,7 +566,7 @@ def _write_package_conf_impl(
 
     toolchain_lib_ids = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
 
-    conf = [
+    conf = cmd_args(
         "name: " + arg.pkgname,
         "version: 1.0.0",
         "id: " + arg.pkgname,
@@ -575,7 +575,7 @@ def _write_package_conf_impl(
         "exposed-modules: " + ", ".join(modules),
         "import-dirs:" + ", ".join(import_dirs),
         "depends: " + ", ".join(toolchain_lib_ids + [lib.id for lib in arg.hlis]),
-    ]
+    )
 
     if not arg.use_empty_lib:
         if not libname:
@@ -587,8 +587,18 @@ def _write_package_conf_impl(
             libname += "_p"
 
         library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
-        conf.append("library-dirs:" + ", ".join(library_dirs))
-        conf.append("extra-libraries: " + libname)
+        conf.add(cmd_args(library_dirs, delimiter = ",", format = "library-dirs: {}"))
+        conf.add(cmd_args(libname, format = "extra-libraries: {}"))
+
+    # extra-libraries
+    extra_libs = [
+        lib[NativeToolchainLibrary]
+        for lib in arg.extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
+    for l in extra_libs:
+        conf.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "library-dirs: "))
+        conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
 
     pkg_conf_artifact = actions.write(pkg_conf, conf)
     _register_package_conf(actions, pkg_conf_artifact, db, arg)
@@ -662,6 +672,7 @@ def _make_package(
         srcs = ctx.attrs.srcs,
         strip_prefix = ctx.attrs.strip_prefix,
         haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo],
+        extra_libraries = ctx.attrs.extra_libraries,
     )
 
     toolchain_libs = attr_deps_haskell_toolchain_libraries(ctx)
@@ -748,7 +759,7 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
         if NativeToolchainLibrary in lib
     ]
     for l in extra_libs:
-        link_args.add(cmd_args(l.lib_path))
+        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         link_args.add(cmd_args("-l{}".format(l.name)))
 
     if arg.use_argsfile_at_link:
@@ -1426,7 +1437,7 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
         if NativeToolchainLibrary in lib
     ]
     for l in extra_libs:
-        link_cmd.add(l.lib_path)
+        link_cmd.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         link_cmd.add("-l{}".format(l.name))
 
     link_cmd.add("-o", output)
