@@ -321,6 +321,7 @@ def metadata_unit_args(
     package_flag = _package_flag(arg.unit.haskell_toolchain)
     ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
 
+
     ghc_args.add(cmd_args(packages_info.exposed_package_args))
     ghc_args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
     ghc_args.add("-fprefer-byte-code")
@@ -588,7 +589,6 @@ def get_packages_info(
 
     package_flag = _package_flag(haskell_toolchain)
     hidden_args = [l for lib in libs.traverse() for l in lib.libs]
-    exposed_package_libs = cmd_args()
     exposed_package_args = cmd_args()
 
     if for_deps:

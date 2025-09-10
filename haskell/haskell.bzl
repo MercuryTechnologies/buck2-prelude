@@ -496,7 +496,12 @@ def _register_package_conf(
     arg,
     ):
 
-    db_deps = [x.db for x in arg.hlis]
+    if arg.for_deps:
+        db_deps = [x.deps_db for x in arg.hlis]
+    elif arg.use_empty_lib:
+        db_deps = [x.empty_db for x in arg.hlis]
+    else:
+        db_deps = [x.db for x in arg.hlis]
 
     # So that ghc-pkg can find the DBs for the dependencies. We might
     # be able to use flags for this instead, but this works.
