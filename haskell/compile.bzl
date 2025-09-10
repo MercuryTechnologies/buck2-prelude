@@ -543,9 +543,13 @@ def _attr_deps_haskell_lib_package_name_and_prefix(ctx: AnalysisContext, link_st
             continue
 
         lib_info = lib.lib[link_style]
+        if(lib_info.deps_db):
+            pkg_root = cmd_args(lib_info.deps_db, parent = 1)
+        else:
+            pkg_root = cmd_args(lib_info.db, parent = 1)
         args.add(cmd_args(
             lib_info.name,
-            cmd_args(lib_info.db, parent = 1),
+            pkg_root,
             delimiter = ":",
         ))
 
