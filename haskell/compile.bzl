@@ -387,7 +387,10 @@ def _dynamic_target_metadata_impl(
     md_args.add(cmd_args(arg.sources, format = "--source={}", relative_to = arg.cell_root))
 
     md_args.add("--source-prefix", arg.strip_prefix)
-    md_args.add(arg.lib_package_name_and_prefix)
+
+    if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
+        md_args.add(arg.lib_package_name_and_prefix)
+
     md_args.add("--output", output)
     md_args.add(buck2_args)
 
