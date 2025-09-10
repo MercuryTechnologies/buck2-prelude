@@ -1304,6 +1304,10 @@ def compile_args(
     elif link_style == LinkStyle("static_pic"):
         compile_args.add("-fPIC", "-fexternal-dynamic-refs")
 
+    # FIXME(jadel): why do we have three copies of this code?
+    if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
+        compile_args.add("-dynamic-too")
+
     osuf, hisuf = output_extensions(link_style, enable_profiling)
     compile_args.add("-osuf", osuf, "-hisuf", hisuf)
 
