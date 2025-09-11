@@ -95,10 +95,14 @@ load(
     "attr_deps_merged_link_infos",
     "attr_deps_profiling_link_infos",
     "attr_deps_shared_library_infos",
+    "error_on_non_haskell_srcs",
     "get_artifact_suffix",
+    "is_haskell_boot",
+    "is_haskell_src",
     "output_extensions",
     "src_to_module_name",
     "get_source_prefixes",
+    "srcs_to_pairs",
     "to_hash",
 )
 load(
@@ -1049,6 +1053,9 @@ def _build_haskell_lib(
     )
 
 def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
+    sources = ctx.attrs.srcs
+    error_on_non_haskell_srcs(sources, ctx.label)
+
     preferred_linkage = _attr_preferred_linkage(ctx)
     if ctx.attrs.enable_profiling and preferred_linkage == Linkage("any"):
         preferred_linkage = Linkage("static")
@@ -1107,7 +1114,7 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
                 enable_profiling = enable_profiling,
                 enable_haddock = not enable_profiling and not non_profiling_hlib,
                 main = None,
-                sources = ctx.attrs.srcs,
+                sources = sources,
                 worker = worker,
             )
             if link_style == LinkStyle("shared") and not enable_profiling:
@@ -1466,6 +1473,9 @@ _dynamic_link_binary = dynamic_actions(
 )
 
 def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
+    sources = ctx.attrs.srcs
+    error_on_non_haskell_srcs(sources, ctx.label)
+
     enable_profiling = ctx.attrs.enable_profiling
 
     # Decide what kind of linking we're doing
@@ -1487,7 +1497,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         enable_profiling = enable_profiling,
         enable_haddock = False,
         main = getattr(ctx.attrs, "main", None),
-        sources = ctx.attrs.srcs,
+        sources = sources,
         worker = worker,
     )
 
