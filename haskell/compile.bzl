@@ -35,6 +35,7 @@ load(
     "attr_deps_haskell_lib_infos",
     "attr_deps_haskell_link_infos",
     "attr_deps_haskell_toolchain_libraries",
+    "error_on_non_haskell_srcs",
     "get_artifact_suffix",
     "get_source_prefixes",
     "is_haskell_boot",
@@ -766,9 +767,7 @@ def _common_compile_module_args(
         for (path, src) in srcs_to_pairs(sources)
         if not is_haskell_src(path) and not is_haskell_boot(path)
     ]
-
-    if non_haskell_sources:
-        warning("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead: {}".format(label, non_haskell_sources))
+    error_on_non_haskell_srcs(sources, label)
 
     # These arguments are used in both modes and can be passed in an argsfile.
     args_for_file = cmd_args([], hidden = non_haskell_sources)
