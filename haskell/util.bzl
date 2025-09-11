@@ -213,3 +213,14 @@ def get_source_prefixes(srcs: list[Artifact], module_map: dict[str, str]) -> lis
         source_prefixes[prefix] = None
 
     return source_prefixes.keys()
+
+
+def error_on_non_haskell_srcs(sources, label):
+    non_haskell_sources = [
+        src
+        for (path, src) in srcs_to_pairs(sources)
+        if not is_haskell_src(path) and not is_haskell_boot(path)
+    ]
+
+    if non_haskell_sources:
+        fail("{} specifies non-haskell file in `srcs`, consider using `srcs_deps` instead: {}".format(label, non_haskell_sources))
