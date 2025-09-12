@@ -395,6 +395,8 @@ def _dynamic_target_metadata_impl(
 
     md_args.add("--output", output)
     md_args.add(buck2_args)
+    # We won't need to look at the ghc argsfile later, but the user might!
+    md_args.add("--use-ghc-args-file-at", actions.declare_output("ghc-args").as_output())
 
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
         build_plan = actions.declare_output(unit.name + ".depends.json")

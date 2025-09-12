@@ -59,6 +59,21 @@ def main():
         action="append",
         help="GHC compiler argument to forward to `ghc -M`, including package flags.")
     parser.add_argument(
+        "--use-ghc-args-file-at",
+        required=True,
+        type=str,
+        help="""Path to write a GHC args file to. Contents of this file will be
+        overwritten.
+
+        This makes the output for failing GHC invocations much shorter and
+        easier to read, while preserving the file so users can inspect it
+        later.
+
+        If this script generated its own temporary directory to write the args
+        file into, it would be deleted when the script failed, preventing users
+        from inspecting the arguments of failed invocations.
+        """)
+    parser.add_argument(
         "--source-prefix",
         required=True,
         type=str,
@@ -116,7 +131,15 @@ def json_default_handler(o):
 def obtain_target_metadata(args):
     aux_paths = [str(binpath) for binpath in args.bin_path if binpath.is_dir()] + [str(binexepath.parent) for binexepath in args.bin_exe]
     if args.build_plan == None:
-        ghc_depends = run_ghc_depends(args.cwd, args.ghc, args.ghc_arg, args.source, aux_paths, args.worker_target_id)
+        ghc_depends = run_ghc_depends(
+            cwd=args.cwd,
+            ghc=args.ghc,
+            ghc_args=args.ghc_arg,
+            sources=args.source,
+            aux_paths=aux_paths,
+            worker_target_id=args.worker_target_id,
+            ghc_args_file_at=args.use_ghc_args_file_at,
+        )
     else:
         ghc_depends = load_toolchain_packages(args.build_plan)
     exposed_modules = determine_exposed_modules(ghc_depends)
@@ -229,7 +252,15 @@ def determine_package_deps(ghc_depends):
     return package_deps
 
 
-def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
+def run_ghc_depends(
+    cwd: Path,
+    ghc: Path,
+    ghc_args: list[str],
+    sources: list[str],
+    aux_paths: list[str],
+    worker_target_id: str,
+    ghc_args_file_at: str,
+):
     with tempfile.TemporaryDirectory() as dname:
         json_fname = os.path.join(dname, "depends.json")
         make_fname = os.path.join(dname, "depends.make")
@@ -249,13 +280,12 @@ def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
             "-dep-makefile", make_fname,
         ] + worker_args + ghc_args + haskell_sources + haskell_boot_sources
 
-        args_fname = os.path.join(dname, "ghc-args")
-        with open(args_fname, "w", encoding="utf-8") as args_file:
+        with open(ghc_args_file_at, "w", encoding="utf-8") as args_file:
             for arg in args:
                 args_file.write(arg)
                 args_file.write("\n")
 
-        args_outer = [str(ghc.absolute()), "@" + args_fname]
+        args_outer = [str(ghc.absolute()), "@" + ghc_args_file_at]
 
         env = os.environ.copy()
         path = env.get("PATH", "")
@@ -264,7 +294,7 @@ def run_ghc_depends(cwd, ghc, ghc_args, sources, aux_paths, worker_target_id):
         res = subprocess.run(args_outer, env=env, cwd=cwd, capture_output=True)
         if res.returncode != 0:
             # Write the GHC command on failure.
-            print(ghc, shlex.join(args), file=sys.stderr)
+            print(shlex.join(args_outer), file=sys.stderr)
 
         # Always forward stdout/stderr.
         # Note, Buck2 swallows stdout on successful builds.
