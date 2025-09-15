@@ -1060,7 +1060,7 @@ def _compile_module(
             for dep_modname in dep_modules:
                 exposed_package_modules.append(direct_deps_by_name[dep_pkgname][1].providers[DynamicCompileResultInfo].modules[dep_modname])
         else:
-            fail("Unknown library dependency '{}'. Add the library to the `deps` attribute".format(dep_pkgname))
+            fail("Unknown library dependency '{}' for module '{}'. Add the library to the `deps` attribute".format(dep_pkgname, module_name))
 
     # Transitive module dependencies from other packages.
     cross_package_modules = actions.tset(
