@@ -595,8 +595,12 @@ def _write_package_conf_impl(
             # following this logic (https://fburl.com/code/3gmobm5x) and will fail.
             libname += "_p"
 
-        library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
-        conf.add(cmd_args(library_dirs, delimiter = ",", format = "library-dirs: {}"))
+        if arg.link_style == LinkStyle("shared"):
+            library_dirs = [_mk_artifact_dir("lib", profiled, arg.link_style) for profiled in arg.profiling]
+        else:
+            library_dirs = [_mk_artifact_dir("lib", profiled, link_style) for profiled in arg.profiling for link_style in [arg.link_style, LinkStyle("shared")]]
+
+        conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
         conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
     # extra-libraries
@@ -1689,7 +1693,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         linfos = [x.prof_info if enable_profiling else x.info for x in hlis]
         uniq_infos = [x[link_style].value for x in linfos]
 
-        pkgname = ctx.label.name + "-link"
+        pkgname = ctx.label.name.replace("_", "-") + "-link"
         linkable_artifacts = [
             f.archive.artifact
             for link in infos.tset.infos.traverse(ordering = "topological")
