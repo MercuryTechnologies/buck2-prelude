@@ -1775,3 +1775,8 @@ def _haskell_module_sub_targets(*, compiled, link_style, enable_profiling):
             if hie.extension == ".hie"
         })],
     }
+
+def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
+    return [
+        DefaultInfo(),
+    ]

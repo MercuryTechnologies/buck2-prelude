@@ -29,7 +29,7 @@ load("@prelude//go:go_library.bzl", "go_library_impl")
 load("@prelude//go:go_stdlib.bzl", "go_stdlib_impl")
 load("@prelude//go:go_test.bzl", "go_test_impl")
 load("@prelude//go/transitions:defs.bzl", "asan_attr", "cgo_enabled_attr", "coverage_mode_attr", "go_binary_transition", "go_exported_library_transition", "go_test_transition", "race_attr", "tags_attr")
-load("@prelude//haskell:haskell.bzl", "haskell_binary_impl", "haskell_library_impl", "haskell_prebuilt_library_impl", "haskell_toolchain_library_impl")
+load("@prelude//haskell:haskell.bzl", "haskell_binary_impl", "haskell_library_impl", "haskell_link_group_impl", "haskell_prebuilt_library_impl", "haskell_toolchain_library_impl")
 load("@prelude//haskell:haskell_ghci.bzl", "haskell_ghci_impl")
 load("@prelude//haskell:haskell_haddock.bzl", "haskell_haddock_impl")
 load("@prelude//haskell:haskell_ide.bzl", "haskell_ide_impl")
@@ -183,6 +183,7 @@ extra_implemented_rules = struct(
 
     #haskell
     haskell_library = haskell_library_impl,
+    haskell_link_group = haskell_link_group_impl,
     haskell_binary = haskell_binary_impl,
     haskell_ghci = haskell_ghci_impl,
     haskell_haddock = haskell_haddock_impl,
@@ -551,6 +552,10 @@ inlined_extra_attributes = {
     "haskell_library": {
         "preferred_linkage": attrs.enum(Linkage.values(), default = "any"),
         "template_deps": attrs.list(attrs.exec_dep(providers = [HaskellLibraryProvider]), default = []),
+        "_cxx_toolchain": toolchains_common.cxx(),
+        "_haskell_toolchain": toolchains_common.haskell(),
+    },
+    "haskell_link_group": {
         "_cxx_toolchain": toolchains_common.cxx(),
         "_haskell_toolchain": toolchains_common.haskell(),
     },

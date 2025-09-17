@@ -205,6 +205,29 @@ haskell_library = prelude_rule(
     ),
 )
 
+haskell_link_group = prelude_rule(
+    name = "haskell_link_group",
+    docs = """
+        Group of haskell_library that will be used as a single link package.
+    """,
+    examples = """
+        ```
+        haskell_link_group(
+          name = 'foo',
+          deps = [
+            ':bar',
+            ':baz',
+          ],
+       )
+       ```
+    """,
+    attrs = {
+        "deps": attrs.list(attrs.dep(), default = [], doc = """
+    haskell_library dependencies which will be grouped by this target.
+"""),
+    },
+)
+
 haskell_toolchain_library = prelude_rule(
     name = "haskell_toolchain_library",
     docs  = """
@@ -287,6 +310,7 @@ haskell_rules = struct(
     haskell_haddock = haskell_haddock,
     haskell_ide = haskell_ide,
     haskell_library = haskell_library,
+    haskell_link_group = haskell_link_group,
     haskell_prebuilt_library = haskell_prebuilt_library,
     haskell_toolchain_library = haskell_toolchain_library,
 )
