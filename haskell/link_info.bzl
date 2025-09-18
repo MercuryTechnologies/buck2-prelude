@@ -11,6 +11,7 @@ load(
 )
 load(
     "@prelude//haskell:library_info.bzl",
+    "HaskellLibraryInfo",
     "HaskellLibraryInfoTSet",
 )
 load(
@@ -34,6 +35,15 @@ HaskellLinkInfo = provider(
 HaskellProfLinkInfo = provider(
     fields = {
         "prof_infos": provider_field(typing.Any, default = None),  # MergedLinkInfo
+    },
+)
+
+HaskellLinkGroupInfo = provider(
+    fields = {
+        "pkgname": provider_field(str),
+        "db": provider_field(Artifact),
+        "lib": provider_field(Artifact),
+        "libraries": provider_field(list[HaskellLibraryInfo]),
     },
 )
 

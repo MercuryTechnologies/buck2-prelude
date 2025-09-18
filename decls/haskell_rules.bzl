@@ -225,6 +225,10 @@ haskell_link_group = prelude_rule(
         "deps": attrs.list(attrs.dep(), default = [], doc = """
     haskell_library dependencies which will be grouped by this target.
 """),
+        "_ghc_pkg_registerer": attrs.dep(
+            providers = [RunInfo],
+            default = "prelude//haskell/tools:ghc_pkg_registerer",
+        ),
     },
 )
 
