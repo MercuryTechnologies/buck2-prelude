@@ -56,7 +56,6 @@ load(
     "CompileResultInfo",
     "compile",
     "get_packages_info",
-    "make_package_env",
     "target_metadata",
 )
 load(
@@ -89,6 +88,7 @@ load(
 load(
     "@prelude//haskell:util.bzl",
     "attr_deps",
+    "attr_deps_haskell_link_group_infos",
     "attr_deps_haskell_link_infos_sans_template_deps",
     "attr_deps_haskell_lib_infos",
     "attr_deps_haskell_link_infos",
@@ -713,6 +713,9 @@ def _get_haskell_shared_library_name_linker_flags(
         fail("Unknown linker type '{}'.".format(linker_type))
 
 def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
+    # link group
+    all_link_group_ids = [ l.id for lg in arg.link_group_libs for l in lg.libraries ]
+
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
     libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
@@ -722,7 +725,15 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
         children = [package_db[name] for name in (arg.toolchain_libs + all_deps) if name in package_db]
     )
 
-    packagedb_args = cmd_args(libs.project_as_args("package_db"))
+    packagedb_args = cmd_args()
+    for d in list(libs.traverse()):
+        if d.name in all_link_group_ids:
+             packagedb_args.add(cmd_args(d.empty_db))
+        else:
+             packagedb_args.add(cmd_args(d.db))
+    for lg in arg.link_group_libs:
+        packagedb_args.add(cmd_args(lg.db))
+
     packagedb_args.add(package_db_tset.project_as_args("package_db"))
 
     link_args = cmd_args()
@@ -737,9 +748,17 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     link_args.add(cmd_args(arg.toolchain_libs, prepend = "-package"))
 
     for item in arg.haskell_direct_deps_lib_infos:
-        link_args.add(cmd_args(item.name, prepend = "-package"))
+        if not item.id in all_link_group_ids:
+            link_args.add(cmd_args(item.name, prepend = "-package"))
 
     link_args.add(cmd_args(package_db_tset.project_as_args("package_db"), prepend="-package-db"))
+
+    # link group
+    for lg in arg.link_group_libs:
+        link_args.add("-package-db", lg.db)
+        link_args.add("-package", lg.pkgname)
+        link_cmd_hidden.append(lg.lib)
+
     link_args.add(
         get_shared_library_flags(arg.linker_info.type),
         "-dynamic",
@@ -873,6 +892,7 @@ def _build_haskell_lib(
             lib.prof_info[link_style] if enable_profiling else lib.info[link_style]
             for lib in attr_deps_haskell_link_infos(ctx)
         ]
+        link_group_libs = attr_deps_haskell_link_group_infos(ctx)
 
         ctx.actions.dynamic_output_new(_dynamic_link_shared(
             pkg_deps = haskell_toolchain.packages.dynamic,
@@ -889,6 +909,7 @@ def _build_haskell_lib(
                 linker_flags = ctx.attrs.linker_flags,
                 linker_info = linker_info,
                 objects = objects,
+                link_group_libs = link_group_libs,
                 toolchain_libs = toolchain_libs,
                 project_libs = project_libs,
                 toolchain_libs_full = toolchain_libs_full,
@@ -1802,7 +1823,7 @@ def _make_link_group_package(
     profiled = False
     library_dirs = [_mk_artifact_dir("lib", profiled, link_style)]
     conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
-    conf.add(cmd_args(libname, format = "extra-libraries: {}"))
+    conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
     pkg_conf = actions.write("pkg-" + artifact_suffix, conf)
 
@@ -1876,9 +1897,24 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
-    pkgname = ctx.label.name.replace("_", "-")
-    libname = ctx.label.name.replace("_", "-")
-    libfile = "lib" + libname + dynamic_lib_suffix
+    static_lib_suffix = "_p.a" if enable_profiling else ".a"
+
+    libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
+    # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
+    if libprefix[-1] == '_':
+        libname0 = libprefix + ctx.label.name
+    else:
+        libname0 = libprefix + "_" + ctx.label.name
+    pkgname = libname0.replace("_", "-")
+    libname = "HS" + pkgname
+
+    libstem = libname
+    if link_style == LinkStyle("shared"):
+        compiler_suffix = "-ghc{}".format(haskell_toolchain.compiler_major_version)
+    else:
+        compiler_suffix = ""
+    libfile = "lib" + libstem + compiler_suffix + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
+
     lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
     lib = ctx.actions.declare_output(lib_short_path)
     db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)

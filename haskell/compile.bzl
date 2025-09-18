@@ -33,6 +33,7 @@ load(
     "@prelude//haskell:util.bzl",
     "attr_deps",
     "attr_deps_haskell_lib_infos",
+    "attr_deps_haskell_link_group_infos",
     "attr_deps_haskell_link_infos",
     "attr_deps_haskell_toolchain_libraries",
     "error_on_non_haskell_srcs",
@@ -822,7 +823,7 @@ def _common_compile_module_args(
         else:
             package_db = []
 
-        package_db_tset = actions.tset(
+        toolchain_package_db_tset = actions.tset(
             HaskellPackageDbTSet,
             children = [package_db[name] for name in toolchain_libs if name in package_db],
         )
@@ -830,8 +831,17 @@ def _common_compile_module_args(
         if incremental:
             packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
         else:
-            packagedb_args = cmd_args(libs.project_as_args("package_db"))
-        packagedb_args.add(package_db_tset.project_as_args("package_db"))
+            all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
+            packagedb_args = cmd_args()
+            for d in list(libs.traverse()):
+                if d.name in all_link_group_ids:
+                     packagedb_args.add(cmd_args(d.empty_db))
+                else:
+                     packagedb_args.add(cmd_args(d.db))
+        for lg in arg.link_group_libs:
+            packagedb_args.add(cmd_args(lg.db))
+
+        packagedb_args.add(toolchain_package_db_tset.project_as_args("package_db"))
 
         package_env_file = make_package_env(
             actions,
@@ -1669,6 +1679,7 @@ def compile(
             extra_libraries = ctx.attrs.extra_libraries,
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
+            link_group_libs = attr_deps_haskell_link_group_infos(ctx),
         ),
     ))
 
