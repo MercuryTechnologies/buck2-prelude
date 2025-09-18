@@ -71,6 +71,7 @@ load(
 )
 load(
     "@prelude//haskell:link_info.bzl",
+    "HaskellLinkGroupInfo",
     "HaskellLinkInfo",
     "HaskellProfLinkInfo",
     "attr_link_style",
@@ -1776,7 +1777,128 @@ def _haskell_module_sub_targets(*, compiled, link_style, enable_profiling):
         })],
     }
 
+
+#
+def _make_link_group_package(
+        actions: AnalysisActions,
+        link_style: LinkStyle,
+        pkgname: str,
+        libname: str,
+        registerer: RunInfo,
+        haskell_toolchain: HaskellToolchainInfo,
+        db: OutputArtifact,
+        hlis: list[HaskellLibraryInfo]):
+    artifact_suffix = get_artifact_suffix(link_style, False)
+
+    conf = cmd_args(
+        "name: " + pkgname,
+        "version: 1.0.0",
+        "id: " + pkgname,
+        "key: " + pkgname,
+        "exposed: False",
+        "depends: " + ", ".join([lib.id for lib in hlis]),
+    )
+
+    profiled = False
+    library_dirs = [_mk_artifact_dir("lib", profiled, link_style)]
+    conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
+    conf.add(cmd_args(libname, format = "extra-libraries: {}"))
+
+    pkg_conf = actions.write("pkg-" + artifact_suffix, conf)
+
+    _register_package_conf(
+        actions,
+        pkg_conf,
+        db,
+        registerer,
+        haskell_toolchain.packager,
+        "haskell_package_linkgroup_",
+        artifact_suffix,
+        False,
+    )
+
+# Implement dynamic library linking for a link group
+def _dynamic_link_group_shared_impl(actions, lib, db, arg):
+    link_args = cmd_args(arg.haskell_toolchain.linker)
+    link_args.add(arg.haskell_toolchain.linker_flags)
+
+    _make_link_group_package(
+        actions,
+        LinkStyle("shared"),
+        arg.pkgname,
+        arg.libname,
+        arg.registerer,
+        arg.haskell_toolchain,
+        db,
+        arg.hlibs
+    )
+
+    for hlib in arg.hlibs:
+        is_profiled = False
+        for o in hlib.objects[is_profiled]:
+            link_args.add(o)
+
+    link_args.add(
+        get_shared_library_flags(arg.linker_info.type),
+        "-dynamic",
+        cmd_args(
+            _get_haskell_shared_library_name_linker_flags(arg.linker_info.type, arg.libfile),
+            prepend = "-optl",
+        ),
+    )
+
+    link_args.add("-o", lib)
+
+    actions.run(
+        link_args,
+        category  = "haskell_link_group_shared",
+        identifier = arg.libname
+    )
+    return []
+
+_dynamic_link_group_shared = dynamic_actions(
+    impl = _dynamic_link_group_shared_impl,
+    attrs = {
+        "lib": dynattrs.output(),
+        "db": dynattrs.output(),
+        "arg": dynattrs.value(typing.Any),
+    },
+)
+
+# Haskell link group implementation
+# Link group creates a virtual package with only shared and static library artifacts
+# This saves linking time.
 def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
+
+    link_style = LinkStyle("shared")
+    enable_profiling = False
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
+    artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
+    dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
+    pkgname = ctx.label.name.replace("_", "-")
+    libname = ctx.label.name.replace("_", "-")
+    libfile = "lib" + libname + dynamic_lib_suffix
+    lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
+    lib = ctx.actions.declare_output(lib_short_path)
+    db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
+    hlibs = [l.get(HaskellLibraryProvider).lib[LinkStyle("shared")] for l in ctx.attrs.deps]
+
+    ctx.actions.dynamic_output_new(_dynamic_link_group_shared(
+        lib = lib.as_output(),
+        db = db.as_output(),
+        arg = struct(
+            hlibs = hlibs,
+            pkgname = pkgname,
+            libname = libname,
+            libfile = libfile,
+            linker_info = linker_info,
+            registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
+            haskell_toolchain = haskell_toolchain,
+        ),
+    ))
+
     return [
-        DefaultInfo(),
+        DefaultInfo(default_outputs = [lib]),
+        HaskellLinkGroupInfo(pkgname = pkgname, db = db, lib = lib, libraries = hlibs),
     ]
