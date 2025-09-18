@@ -60,7 +60,7 @@ def main():
         help="GHC compiler argument to forward to `ghc -M`, including package flags.")
     parser.add_argument(
         "--use-ghc-args-file-at",
-        required=True,
+        required=False,
         type=str,
         help="""Path to write a GHC args file to. Contents of this file will be
         overwritten.
