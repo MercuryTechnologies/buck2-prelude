@@ -983,15 +983,12 @@ def _compile_make_args(
         module_name: str,
         module: _Module,
         outputs: dict[Artifact, OutputArtifact],
-        this_package_modules: list[CompiledModuleTSet],
-        cross_package_modules: CompiledModuleTSet) -> cmd_args:
+        dependency_modules: CompiledModuleTSet) -> cmd_args:
     args = cmd_args()
-    # Provide all module dependencies to the worker for state restoration from cache, separating modules in the
-    # current unit from those in other packages of the project.
-    dep_modules = dict(
-        home_unit = [dep.value for dep in this_package_modules],
-        project = cross_package_modules.project_as_json("dep_modules", ordering = "postorder"),
-    )
+
+    # Provide all module dependencies to the worker for state restoration from cache, including both the current unit
+    # and other library targets.
+    dep_modules = dependency_modules.project_as_json("dep_modules", ordering = "postorder")
     dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
     actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
     args.add("--dep-modules", dep_modules_file)
@@ -1108,8 +1105,7 @@ def _compile_module(
             module_name = module_name,
             module = module,
             outputs = outputs,
-            this_package_modules = this_package_modules,
-            cross_package_modules = cross_package_modules,
+            dependency_modules = dependency_modules,
         ))
 
         # The make worker does not support stub dirs at the moment, so we create it directly.
