@@ -21,6 +21,7 @@ load(
 )
 load(
     "@prelude//haskell:link_info.bzl",
+    "HaskellLinkGroupInfo",
     "HaskellLinkInfo",
     "HaskellProfLinkInfo",
 )
@@ -96,6 +97,15 @@ def attr_deps_haskell_link_infos(ctx: AnalysisContext) -> list[HaskellLinkInfo]:
             for d in attr_deps(ctx) + ctx.attrs.template_deps
         ],
     ))
+def attr_deps_haskell_link_group_infos(ctx: AnalysisContext) -> list[HaskellLinkGroupInfo]:
+    return dedupe(filter(
+        None,
+        [
+            d.get(HaskellLinkGroupInfo)
+            for d in attr_deps(ctx)
+        ],
+    ))
+
 
 def attr_deps_haskell_toolchain_libraries(ctx: AnalysisContext) -> list[HaskellToolchainLibrary]:
     return filter(
