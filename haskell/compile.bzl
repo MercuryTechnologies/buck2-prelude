@@ -674,7 +674,7 @@ def get_packages_info(
         if HaskellToolchainLibrary in dep
     ]
 
-    toolchain_libs = direct_toolchain_libs + libs.reduce("packages")
+    toolchain_libs = direct_toolchain_libs + ([] if worker_make else libs.reduce("packages"))
 
     package_db_tset = actions.tset(
         HaskellPackageDbTSet,
