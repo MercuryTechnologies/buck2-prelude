@@ -230,7 +230,7 @@ def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_styl
 # cache.
 def transitive_metadata(actions: AnalysisActions, pkgname: str, packages_info: PackagesInfo) -> cmd_args:
     dep_units_file = actions.declare_output("dep-units-{}.json".format(pkgname))
-    dep_units = packages_info.transitive_deps.project_as_json("dep_units", ordering = "postorder")
+    dep_units = reversed(packages_info.transitive_deps.project_as_json("dep_units", ordering = "topological").traverse())
     actions.write_json(dep_units_file, dep_units, with_inputs = True, pretty = True)
     return cmd_args(dep_units_file, prepend = "--dep-units")
 
@@ -988,7 +988,9 @@ def _compile_make_args(
 
     # Provide all module dependencies to the worker for state restoration from cache, including both the current unit
     # and other library targets.
-    dep_modules = dependency_modules.project_as_json("dep_modules", ordering = "postorder")
+    # Topological order is necessary to ensure that no module is loaded before its dependencies are, and since this
+    # places the most downstream item at the head of the list, we need to reverse it.
+    dep_modules = reversed(dependency_modules.project_as_json("dep_modules", ordering = "topological").traverse())
     dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
     actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
     args.add("--dep-modules", dep_modules_file)
