@@ -1846,7 +1846,9 @@ def _make_link_group_package(
 # Implement dynamic library linking for a link group
 def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_infos, pkg_deps):
 
-    link_args = cmd_args(arg.haskell_toolchain.linker)
+    link_cmd_args = [arg.haskell_toolchain.linker]
+    link_cmd_hidden = []
+    link_args = cmd_args()
     link_args.add(arg.haskell_toolchain.linker_flags)
 
     toolchain_deps = [d.name for d in arg.toolchain_deps]
@@ -1876,12 +1878,21 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
         ),
     )
 
-    link_args.add("-o", lib)
+    link_cmd_args.append(at_argfile(
+        actions = actions,
+        name = "haskell_link_group_shared.argsfile",
+        args = link_args,
+        allow_args = True,
+    ))
+
+    link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
+    link_cmd.add("-o", lib)
 
     actions.run(
-        link_args,
+        link_cmd,
         category  = "haskell_link_group_shared",
-        identifier = arg.libname
+        identifier = arg.libname,
+        allow_cache_upload = True,
     )
 
     _make_link_group_package(
