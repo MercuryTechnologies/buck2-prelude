@@ -326,6 +326,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             deps_db = None,
             objects = {},
             dependencies = [],
+            toolchain_dependencies = [],
             import_dirs = {},
             hie_files = {},
             stub_dirs = [],
@@ -344,6 +345,7 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
             deps_db = None,
             objects = {},
             dependencies = [],
+            toolchain_dependencies = [],
             import_dirs = {},
             hie_files = {},
             stub_dirs = [],
@@ -732,6 +734,7 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     link_args.add(cmd_args(packagedb_args, prepend = "-package-db"))
 
     link_args.add(cmd_args(arg.toolchain_libs, prepend = "-package"))
+
     for item in arg.haskell_direct_deps_lib_infos:
         link_args.add(cmd_args(item.name, prepend = "-package"))
 
@@ -843,6 +846,8 @@ def _build_haskell_lib(
 
     toolchain_libs = [dep.name for dep in attr_deps_haskell_toolchain_libraries(ctx)]
     project_libs = [dep.name for dep in attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)]
+    toolchain_libs_full = attr_deps_haskell_toolchain_libraries(ctx)
+    project_libs_full = attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)
 
     if link_style == LinkStyle("shared"):
         lib = ctx.actions.declare_output(lib_short_path)
@@ -884,6 +889,9 @@ def _build_haskell_lib(
                 linker_info = linker_info,
                 objects = objects,
                 toolchain_libs = toolchain_libs,
+                project_libs = project_libs,
+                toolchain_libs_full = toolchain_libs_full,
+                project_libs_full = project_libs_full,
                 use_argsfile_at_link = ctx.attrs.use_argsfile_at_link,
                 worker_target_id = pkgname,
                 extra_libraries = ctx.attrs.extra_libraries,
@@ -1031,6 +1039,7 @@ def _build_haskell_lib(
         is_prebuilt = False,
         profiling_enabled = enable_profiling,
         dependencies = toolchain_libs + project_libs,
+        toolchain_dependencies = toolchain_libs_full,
         md_file = md_file,
     )
 

@@ -6,6 +6,7 @@
 # of this source tree.
 
 load("@prelude//utils:utils.bzl", "flatten", "dedupe_by_value")
+load("@prelude//haskell:toolchain.bzl", "HaskellToolchainLibrary")
 
 # If the target is a haskell library, the HaskellLibraryProvider
 # contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
@@ -52,8 +53,9 @@ HaskellLibraryInfo = record(
     version = str,
     is_prebuilt = bool,
     profiling_enabled = bool,
-    # Package dependencies
+    # Toolchain package dependencies
     dependencies = list[str],
+    toolchain_dependencies = list[HaskellToolchainLibrary],
     md_file = Artifact | None,
 )
 
@@ -72,6 +74,12 @@ def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None)
         flatted.extend(lib.dependencies)
     return dedupe_by_value(flatted)
 
+def _get_package_toolchain_deps(children: list[list[HaskellToolchainLibrary]], lib: HaskellLibraryInfo | None):
+    flatted = flatten(children)
+    if lib:
+        flatted.extend(lib.toolchain_dependencies)
+    return dedupe_by_value(flatted)
+
 # Used by the persistent worker in the build plan action to restore the target unit's transitive dependencies from cache
 # into the unit env and module graph.
 def _json_as_dep_units(lib: HaskellLibraryInfo) -> struct:
@@ -88,6 +96,7 @@ HaskellLibraryInfoTSet = transitive_set(
     },
     reductions = {
         "packages": _get_package_deps,
+        "toolchain_packages": _get_package_toolchain_deps,
     },
     json_projections = {
         "dep_units": _json_as_dep_units,
