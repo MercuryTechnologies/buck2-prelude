@@ -842,6 +842,7 @@ def _build_haskell_lib(
     uniq_infos = [x[link_style].value for x in linfos]
 
     toolchain_libs = [dep.name for dep in attr_deps_haskell_toolchain_libraries(ctx)]
+    project_libs = [dep.name for dep in attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)]
 
     if link_style == LinkStyle("shared"):
         lib = ctx.actions.declare_output(lib_short_path)
@@ -1029,7 +1030,7 @@ def _build_haskell_lib(
         version = "1.0.0",
         is_prebuilt = False,
         profiling_enabled = enable_profiling,
-        dependencies = toolchain_libs,
+        dependencies = toolchain_libs + project_libs,
         md_file = md_file,
     )
 
