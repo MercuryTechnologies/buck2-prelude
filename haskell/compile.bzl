@@ -19,6 +19,7 @@ load(
 )
 load(
     "@prelude//haskell:link_info.bzl",
+    "HaskellLinkGroupInfo",
     "HaskellLinkInfo",
 )
 load(
@@ -1278,6 +1279,7 @@ def compile_args(
         extra_libraries,
         package_env_args: cmd_args,
         target_deps_args: cmd_args,
+        link_group_libs: list[HaskellLinkGroupInfo],
         pkgname = None,
         suffix: str = "") -> CompileArgsInfo:
     compile_cmd = cmd_args()
@@ -1353,6 +1355,12 @@ def compile_args(
     )
 
     compile_args.add(packages_info.exposed_package_args)
+
+    # handle link group
+
+    for lg in link_group_libs:
+        compile_args.add(cmd_args(lg.db, prepend = "-package-db"))
+        compile_args.add(cmd_args(lg.pkgname, prepend = "-package", hidden=[lg.lib]))
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
@@ -1472,6 +1480,7 @@ def _compile_non_incr(
         enable_profiling = enable_profiling,
         package_env_args = common_args.package_env_args,
         target_deps_args = common_args.target_deps_args,
+        link_group_libs = arg.link_group_libs,
         pkgname = arg.pkgname,
     )
 

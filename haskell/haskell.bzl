@@ -755,7 +755,6 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
 
     # link group
     for lg in arg.link_group_libs:
-        link_args.add("-package-db", lg.db)
         link_args.add("-package", lg.pkgname)
         link_cmd_hidden.append(lg.lib)
 
