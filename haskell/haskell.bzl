@@ -769,7 +769,8 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
 
     link_args.add(arg.objects)
 
-    link_args.add(cmd_args(unpack_link_args(arg.infos), prepend = "-optl"))
+    link_cmd_hidden.append(unpack_link_args(arg.infos))
+
     # extra-libraries
     extra_libs = [
         lib[NativeToolchainLibrary]
