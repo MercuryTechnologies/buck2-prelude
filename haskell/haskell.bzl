@@ -1430,29 +1430,49 @@ def _make_link_package(
     return db
 
 def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
-    link_cmd = arg.link.copy() # link is already frozen, make a copy
+    link_args = arg.link.copy() # link is already frozen, make a copy
+    link_cmd_hidden = []
 
-    # Add -package-db and -package/-expose-package flags for each Haskell
-    # library dependency.
-    packages_info = get_packages_info(
-        actions,
-        deps = arg.deps,
-        direct_deps_link_info = arg.direct_deps_link_info,
-        haskell_toolchain = arg.haskell_toolchain,
-        haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
-        link_style = arg.link_style,
-        pkg_deps = pkg_deps,
-        specify_pkg_version = False,
-        enable_profiling = arg.enable_profiling,
-        use_empty_lib = False,
+    package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+
+    link_args.add("-hide-all-packages")
+
+    all_link_group_ids = [ l.id for lg in arg.link_group_libs for l in lg.libraries ]
+
+    libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
+
+    all_toolchain_libs = arg.toolchain_libs + libs.reduce("packages")
+
+    toolchain_package_db_tset = actions.tset(
+        HaskellPackageDbTSet,
+        children = [package_db[name] for name in all_toolchain_libs if name in package_db]
     )
 
-    link_cmd.add("-hide-all-packages")
-    link_cmd.add(cmd_args(arg.toolchain_libs, prepend = "-package"))
-    link_cmd.add(cmd_args(packages_info.exposed_package_args))
-    link_cmd.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
-    link_cmd.add(arg.haskell_toolchain.linker_flags)
-    link_cmd.add(arg.linker_flags)
+    packagedb_args = cmd_args()
+
+    for d in list(libs.traverse()):
+        if d.name in all_link_group_ids:
+             packagedb_args.add(cmd_args(d.empty_db))
+        else:
+             packagedb_args.add(cmd_args(d.db))
+    for lg in arg.link_group_libs:
+        packagedb_args.add(cmd_args(lg.db))
+    packagedb_args.add(toolchain_package_db_tset.project_as_args("package_db"))
+
+    link_args.add(cmd_args(packagedb_args, prepend = "-package-db"))
+
+    link_args.add(cmd_args(arg.toolchain_libs, prepend = "-package"))
+    for item in arg.haskell_direct_deps_lib_infos:
+        if not item.id in all_link_group_ids:
+            link_args.add(cmd_args(item.name, prepend = "-package"))
+            link_cmd_hidden.append(item.libs)
+    # link group
+    for lg in arg.link_group_libs:
+        link_args.add("-package", lg.pkgname)
+        link_cmd_hidden.append(lg.lib)
+
+    link_args.add(arg.haskell_toolchain.linker_flags)
+    link_args.add(arg.linker_flags)
 
     # extra-libraries
     extra_libs = [
@@ -1461,10 +1481,12 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
         if NativeToolchainLibrary in lib
     ]
     for l in extra_libs:
-        link_cmd.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        link_cmd.add("-l{}".format(l.name))
+        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
+        link_args.add("-l{}".format(l.name))
 
-    link_cmd.add("-o", output)
+    link_args.add("-o", output)
+
+    link_cmd = cmd_args(link_args, hidden = link_cmd_hidden)
 
     actions.run(
         link_cmd,
@@ -1716,7 +1738,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         link.add("-package", pkgname)
         link.add(cmd_args(hidden = linkable_artifacts))
     else:
-        link.add(cmd_args(unpack_link_args(infos), prepend = "-optl"))
+        #link.add(cmd_args(unpack_link_args(infos), prepend = "-optl"))
         link.add("-dynamic")
 
     haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
@@ -1724,6 +1746,12 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
         link_style,
         enable_profiling = enable_profiling,
     )
+
+    direct_deps_info = [
+        lib.prof_info[link_style] if enable_profiling else lib.info[link_style]
+        for lib in attr_deps_haskell_link_infos(ctx)
+    ]
+    link_group_libs = attr_deps_haskell_link_group_infos(ctx)
 
     ctx.actions.dynamic_output_new(_dynamic_link_binary(
         pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None,
@@ -1737,6 +1765,8 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
             link = link,
             link_style = link_style,
             linker_flags = ctx.attrs.linker_flags,
+            direct_deps_info = direct_deps_info,
+            link_group_libs = link_group_libs,
             toolchain_libs = toolchain_libs,
             extra_libraries = ctx.attrs.extra_libraries,
         ),
