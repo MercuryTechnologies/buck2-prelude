@@ -1049,11 +1049,9 @@ def _compile_module(
         toolchain_deps_by_name: dict[str, None],
         aux_deps: None | list[Artifact],
         src_envs: None | dict[str, ArgLike],
-        source_prefixes: list[str],
         extra_libraries: list[Dependency],
         worker: None | WorkerInfo,
-        allow_worker: bool,
-        is_haskell_binary: bool) -> CompiledModuleTSet:
+        allow_worker: bool) -> CompiledModuleTSet:
     use_worker = allow_worker and haskell_toolchain.use_worker
     worker_make = use_worker and haskell_toolchain.worker_make
 
@@ -1237,7 +1235,6 @@ def _compile_incr(
         th_modules,
         package_deps,
         direct_deps_by_name,
-        source_prefixes,
         outputs) -> None:
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
@@ -1261,11 +1258,9 @@ def _compile_incr(
             artifact_suffix = arg.artifact_suffix,
             direct_deps_by_name = direct_deps_by_name,
             toolchain_deps_by_name = arg.toolchain_deps_by_name,
-            source_prefixes = source_prefixes,
             extra_libraries = arg.extra_libraries,
             worker = arg.worker,
             allow_worker = arg.allow_worker,
-            is_haskell_binary = arg.is_haskell_binary,
         )
 
 def compile_args(
@@ -1454,7 +1449,6 @@ def _compile_non_incr(
         th_modules,
         package_deps,
         direct_deps_by_name,
-        source_prefixes,
         outputs) -> None:
     haskell_toolchain = arg.haskell_toolchain
     link_style = arg.link_style
@@ -1561,7 +1555,6 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
 
     mapped_modules = {module_map.get(k, k): v for k, v in arg.modules.items()}
     module_tsets = {}
-    source_prefixes = get_source_prefixes(arg.sources, module_map)
 
     if incremental:
         _compile_incr(
@@ -1574,7 +1567,6 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
             th_modules,
             package_deps,
             direct_deps_by_name,
-            source_prefixes,
             outputs,
         )
     else:
@@ -1588,7 +1580,6 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
             th_modules,
             package_deps,
             direct_deps_by_name,
-            source_prefixes,
             outputs,
         )
 
@@ -1689,7 +1680,6 @@ def compile(
             extra_libraries = ctx.attrs.extra_libraries,
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
-            is_haskell_binary = is_haskell_binary,
         ),
     ))
 
