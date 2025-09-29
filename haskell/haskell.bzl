@@ -923,7 +923,8 @@ def _build_haskell_lib(
     else:  # static flavours
         # TODO: avoid making an archive for a single object, like cxx does
         # (but would that work with Template Haskell?)
-        archive = make_archive(ctx, lib_short_path, compiled.objects)
+        objs = [ o for o in compiled.objects if o.extension != ".dyn_o" ]
+        archive = make_archive(ctx, lib_short_path, objs)
         lib = archive.artifact
         libs = [lib] + archive.external_objects
         link_infos = LinkInfos(
