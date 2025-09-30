@@ -1647,8 +1647,6 @@ def compile(
         for lib in attr_deps_haskell_link_infos(ctx)
     ]
 
-    toolchain_libs = [dep.name for dep in attr_deps_haskell_toolchain_libraries(ctx)]
-
     haskell_direct_deps_lib_infos = attr_deps_haskell_lib_infos(
         ctx,
         LinkStyle("shared"),
