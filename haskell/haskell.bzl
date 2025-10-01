@@ -1850,6 +1850,7 @@ def _make_link_group_package(
         db: OutputArtifact,
         hlibs: list[HaskellLibraryInfo],
         project_deps: list[str],
+        extra_libraries: list[NativeToolchainLibrary],
         toolchain_lib_dyn_infos: list[ResolvedDynamicValue]):
     artifact_suffix = get_artifact_suffix(link_style, False)
 
@@ -1871,6 +1872,11 @@ def _make_link_group_package(
     library_dirs = [_mk_artifact_dir("lib", profiled, link_style)]
     conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
     conf.add(cmd_args(libname, format = "hs-libraries: {}"))
+
+    # collect all the extra library dependencies from component Haskell libraries
+    for l in extra_libraries:
+        conf.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "library-dirs: "))
+        conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
 
     pkg_conf = actions.write("pkg-" + artifact_suffix, conf)
 
@@ -1929,6 +1935,10 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
         for o in hlib.objects[is_profiled]:
             link_args.add(o)
 
+    for l in arg.extra_libraries:
+        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
+        link_args.add(cmd_args(l.name, format = "-l{}"))
+
     link_args.add(
         get_shared_library_flags(arg.linker_info.type),
         "-dynamic",
@@ -1965,6 +1975,7 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
         db,
         arg.hlibs,
         arg.project_deps,
+        arg.extra_libraries,
         toolchain_lib_dyn_infos,
     )
 
@@ -2031,6 +2042,9 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
 
     pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
 
+    # collect all the extra library dependencies from component Haskell libraries
+    direct_extra_libs = [ elib for lib in hlibs for elib in lib.extra_libraries]
+
     ctx.actions.dynamic_output_new(_dynamic_link_group_shared(
         lib = lib.as_output(),
         db = db.as_output(),
@@ -2046,6 +2060,7 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
             project_deps = project_deps,
             direct_deps = direct_deps,
             libs_tset = libs_tset,
+            extra_libraries = direct_extra_libs,
         ),
         toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
         pkg_deps = pkg_deps,
@@ -2053,5 +2068,10 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
 
     return [
         DefaultInfo(default_outputs = [lib]),
-        HaskellLinkGroupInfo(pkgname = pkgname, db = db, lib = lib, libraries = hlibs),
+        HaskellLinkGroupInfo(
+            pkgname = pkgname,
+            db = db,
+            lib = lib,
+            libraries = hlibs,
+        ),
     ]
