@@ -1908,7 +1908,7 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
     # adding indirect project dep packages
     direct_deps = []
     indirect_deps = []
-    direct_deps_name = [d.name for d in arg.direct_deps]
+    direct_deps_name = [d.name for d in arg.hlibs]
     for d in list(arg.libs_tset.traverse()):
         if d.name in direct_deps_name:
             direct_deps.append(d)
@@ -1991,22 +1991,27 @@ _dynamic_link_group_shared = dynamic_actions(
 # Haskell link group implementation
 # Link group creates a virtual package with only shared and static library artifacts
 # This saves linking time.
-def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
+def make_haskell_link_group(
+    actions,
+    label,
+    hlibs,
+    direct_deps_info,
+    link_style,
+    enable_profiling,
+    registerer,
+    haskell_toolchain,
+    linker_info) -> list[Provider]:
 
-    link_style = LinkStyle("shared")
-    enable_profiling = False
-    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
-    linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
     static_lib_suffix = "_p.a" if enable_profiling else ".a"
 
-    libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
+    libprefix = repr(label.path).replace("//", "_").replace("/", "_")
     # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
     if libprefix[-1] == '_':
-        libname0 = libprefix + ctx.label.name
+        libname0 = libprefix + label.name
     else:
-        libname0 = libprefix + "_" + ctx.label.name
+        libname0 = libprefix + "_" + label.name
     pkgname = libname0.replace("_", "-")
     libname = "HS" + pkgname
 
@@ -2018,13 +2023,10 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     libfile = "lib" + libstem + compiler_suffix + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
 
     lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
-    lib = ctx.actions.declare_output(lib_short_path)
-    db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
-    hlibs = [l.get(HaskellLibraryProvider).lib[LinkStyle("shared")] for l in ctx.attrs.deps]
+    lib = actions.declare_output(lib_short_path)
+    db = actions.declare_output("db-" + artifact_suffix, dir = True)
 
-    direct_deps = attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)
-    direct_deps_info = [ lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx) ]
-    libs_tset = ctx.actions.tset(
+    libs_tset = actions.tset(
         HaskellLibraryInfoTSet,
         children = direct_deps_info,
     )
@@ -2041,7 +2043,7 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     # collect all the extra library dependencies from component Haskell libraries
     direct_extra_libs = [ elib for lib in hlibs for elib in lib.extra_libraries]
 
-    ctx.actions.dynamic_output_new(_dynamic_link_group_shared(
+    actions.dynamic_output_new(_dynamic_link_group_shared(
         lib = lib.as_output(),
         db = db.as_output(),
         arg = struct(
@@ -2050,11 +2052,10 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
             libname = libname,
             libfile = libfile,
             linker_info = linker_info,
-            registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
+            registerer = registerer,
             haskell_toolchain = haskell_toolchain,
             toolchain_deps = toolchain_deps,
             project_deps = project_deps,
-            direct_deps = direct_deps,
             libs_tset = libs_tset,
             extra_libraries = direct_extra_libs,
         ),
@@ -2071,3 +2072,28 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
             libraries = hlibs,
         ),
     ]
+
+def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
+    # for now
+    link_style = LinkStyle("shared")
+    enable_profiling = False
+
+    registerer = ctx.attrs._ghc_pkg_registerer[RunInfo]
+    haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
+    linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
+
+    hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in ctx.attrs.deps]
+    direct_deps_info = [ lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx) ]
+
+    results = make_haskell_link_group(
+        ctx.actions,
+        ctx.label,
+        hlibs,
+        direct_deps_info,
+        link_style,
+        enable_profiling,
+        registerer,
+        haskell_toolchain,
+        linker_info,
+    )
+    return results
