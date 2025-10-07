@@ -444,12 +444,15 @@ def _dynamic_target_metadata_impl(
         ghc_args.add("-dep-makefile", cmd_args(makefile, ignore_artifacts = True))
         ghc_args.add(cmd_args(arg.sources))
 
-        ghc_args_file = argfile(
-            actions = actions,
-            name = "haskell_metadata_ghc_{}.args".format(unit.name),
-            args = ghc_args,
-            allow_args = True,
-        )
+    ghc_args_file = argfile(
+        actions = actions,
+        name = "haskell_metadata_ghc_{}.args".format(unit.name),
+        args = ghc_args,
+        allow_args = True,
+    )
+    md_args.add("--unit-args", ghc_args_file)
+
+    if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
 
         bp_args = cmd_args()
         bp_args.add("-M")
