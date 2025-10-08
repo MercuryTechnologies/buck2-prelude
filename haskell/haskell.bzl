@@ -479,54 +479,26 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
         linkable_graph,
     ]
 
-# Script to generate a GHC package-db entry for a new package.
-#
-# Sets --force so that ghc-pkg does not check for .hi, .so, ... files.
-# This way package actions can be scheduled before actual build actions,
-# don't lie on the critical path for a build, and don't form a bottleneck.
-_REGISTER_PACKAGE = """\
-set -eu
-GHC_PKG=$1
-DB=$2
-PKGCONF=$3
-"$GHC_PKG" init "$DB"
-"$GHC_PKG" register --package-conf "$DB" --no-expand-pkgroot "$PKGCONF" --force -v0
-"""
-
 def _register_package_conf(
     actions,
     pkg_conf,
     db,
-    arg,
+    registerer,
+    packager,
+    category_prefix,
+    artifact_suffix,
+    use_empty_lib,
     ):
 
-    if arg.for_deps:
-        db_deps = [x.deps_db for x in arg.hlis]
-    elif arg.use_empty_lib:
-        db_deps = [x.empty_db for x in arg.hlis]
-    else:
-        db_deps = [x.db for x in arg.hlis]
-
-    # So that ghc-pkg can find the DBs for the dependencies. We might
-    # be able to use flags for this instead, but this works.
-    ghc_package_path = cmd_args(
-        db_deps,
-        delimiter = ":",
-    )
+    register_cmd = cmd_args(registerer)
+    register_cmd.add("--ghc-pkg", packager)
+    register_cmd.add("--output", db)
+    register_cmd.add("--package-conf", pkg_conf)
 
     actions.run(
-        cmd_args([
-            "sh",
-            "-c",
-            _REGISTER_PACKAGE,
-            "",
-            arg.haskell_toolchain.packager,
-            db,
-            pkg_conf,
-        ]),
-        category = "haskell_package_" + arg.artifact_suffix.replace("-", "_"),
-        identifier = "empty" if arg.use_empty_lib else "final",
-        env = {"GHC_PACKAGE_PATH": ghc_package_path} if db_deps else {},
+        register_cmd,
+        category = category_prefix + artifact_suffix.replace("-", "_"),
+        identifier = "empty" if use_empty_lib else "final",
         # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
     )
@@ -614,7 +586,17 @@ def _write_package_conf_impl(
         conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
 
     pkg_conf_artifact = actions.write(pkg_conf, conf)
-    _register_package_conf(actions, pkg_conf_artifact, db, arg)
+
+    _register_package_conf(
+        actions,
+        pkg_conf_artifact,
+        db,
+        arg.registerer,
+        arg.haskell_toolchain.packager,
+        "haskell_package_",
+        arg.artifact_suffix,
+        arg.use_empty_lib,
+    )
 
     return []
 
@@ -685,6 +667,7 @@ def _make_package(
         srcs = ctx.attrs.srcs,
         strip_prefix = ctx.attrs.strip_prefix,
         haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo],
+        registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
         extra_libraries = ctx.attrs.extra_libraries,
     )
 
@@ -1396,30 +1379,19 @@ def _make_link_package(
     pkg_conf = ctx.actions.write("pkg-" + artifact_suffix + "_link.conf", conf)
     db = ctx.actions.declare_output("db-" + artifact_suffix + "_link", dir = True)
 
-    # While the list of hlis is unique, there may be multiple packages in the same db.
-    # Cutting down the GHC_PACKAGE_PATH significantly speeds up GHC.
-    db_deps = {x.db: None for x in hlis}.keys()
-
-    # So that ghc-pkg can find the DBs for the dependencies. We might
-    # be able to use flags for this instead, but this works.
-    ghc_package_path = cmd_args(
-        db_deps,
-        delimiter = ":",
-    )
-
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
-    ctx.actions.run(
-        cmd_args([
-            "sh",
-            "-c",
-            _REGISTER_PACKAGE,
-            "",
-            haskell_toolchain.packager,
-            db.as_output(),
-            pkg_conf,
-        ]),
-        category = "haskell_package_link" + artifact_suffix.replace("-", "_"),
-        env = {"GHC_PACKAGE_PATH": ghc_package_path},
+    registerer = ctx.attrs._ghc_pkg_registerer[RunInfo]
+    category_prefix = "haskell_package_link_"
+
+    _register_package_conf(
+        ctx.actions,
+        pkg_conf,
+        db.as_output(),
+        registerer,
+        haskell_toolchain.packager,
+        category_prefix,
+        artifact_suffix,
+        False,
     )
 
     return db
