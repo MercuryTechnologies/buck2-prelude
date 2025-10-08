@@ -433,7 +433,16 @@ def _dynamic_target_metadata_impl(
         md_args.add(arg.lib_package_name_and_prefix)
 
     md_args.add("--output", output)
+
+    buck_args_file = argfile(
+        actions = actions,
+        name = "haskell_metadata_buck2_{}.args".format(unit.name),
+        args = buck2_args,
+        allow_args = True,
+    )
+
     md_args.add(buck2_args)
+    md_args.add("--unit-buck-args", buck_args_file)
 
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
         build_plan = actions.declare_output(unit.name + ".depends.json")
@@ -459,10 +468,7 @@ def _dynamic_target_metadata_impl(
         bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
         add_worker_args(haskell_toolchain, bp_args, unit.name)
 
-        bp_args.add(cmd_args(
-            unit.external_tool_paths,
-            format = "--bin-exe={}",
-        ))
+        bp_args.add(buck2_args)
         bp_args.add(transitive_metadata(actions, unit.name, packages_info))
         bp_args.add("--unit", unit.name)
         bp_args.add(cmd_args(ghc_args_file, prepend = "--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
