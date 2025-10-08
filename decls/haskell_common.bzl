@@ -61,6 +61,10 @@ def _scripts_arg():
             providers = [RunInfo],
             default = "prelude//haskell/tools:ghc_wrapper",
         ),
+        "_ghc_pkg_registerer": attrs.dep(
+            providers = [RunInfo],
+            default = "prelude//haskell/tools:ghc_pkg_registerer",
+        ),
         "_worker": attrs.option(attrs.exec_dep(providers = [WorkerInfo]), default = None),
     }
 
