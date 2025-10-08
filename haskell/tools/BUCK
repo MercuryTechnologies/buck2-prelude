@@ -29,3 +29,9 @@ prelude.python_bootstrap_binary(
     main = "ghc_wrapper.py",
     visibility = ["PUBLIC"],
 )
+
+prelude.python_bootstrap_binary(
+    name = "ghc_pkg_registerer",
+    main = "ghc_pkg_registerer.py",
+    visibility = ["PUBLIC"],
+)
