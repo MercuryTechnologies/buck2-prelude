@@ -115,6 +115,11 @@ def main():
         type=str,
         help="Args used to reconstruct the persistent worker's unit state when recompiling",
     )
+    parser.add_argument(
+        "--unit-buck-args",
+        type=str,
+        help="Args used to reconstruct the persistent worker's environment when recompiling",
+    )
     args = parser.parse_args()
 
     result = obtain_target_metadata(args)
@@ -159,6 +164,7 @@ def obtain_target_metadata(args):
         # persistent worker in order to restore the state from cache.
         "build_plan": ghc_depends,
         "unit_args": args.unit_args,
+        "unit_buck_args": args.unit_buck_args,
     }
 
 
