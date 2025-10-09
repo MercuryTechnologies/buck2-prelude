@@ -102,7 +102,7 @@ def attr_deps_haskell_link_group_infos(ctx: AnalysisContext) -> list[HaskellLink
         None,
         [
             d.get(HaskellLinkGroupInfo)
-            for d in attr_deps(ctx)
+            for d in ctx.attrs.deps
         ],
     ))
 
