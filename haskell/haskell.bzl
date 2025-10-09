@@ -1808,8 +1808,13 @@ def _make_link_group_package(
         registerer: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
         db: OutputArtifact,
-        hlis: list[HaskellLibraryInfo]):
+        hlibs: list[HaskellLibraryInfo],
+        toolchain_lib_dyn_infos: list[ResolvedDynamicValue]):
     artifact_suffix = get_artifact_suffix(link_style, False)
+
+    direct_deps = [lib.id for lib in hlibs]
+    toolchain_deps = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
+    all_deps = direct_deps + toolchain_deps
 
     conf = cmd_args(
         "name: " + pkgname,
@@ -1817,7 +1822,7 @@ def _make_link_group_package(
         "id: " + pkgname,
         "key: " + pkgname,
         "exposed: False",
-        "depends: " + ", ".join([lib.id for lib in hlis]),
+        "depends: " + ", ".join(all_deps),
     )
 
     profiled = False
@@ -1839,20 +1844,23 @@ def _make_link_group_package(
     )
 
 # Implement dynamic library linking for a link group
-def _dynamic_link_group_shared_impl(actions, lib, db, arg):
+def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_infos, pkg_deps):
+
     link_args = cmd_args(arg.haskell_toolchain.linker)
     link_args.add(arg.haskell_toolchain.linker_flags)
 
-    _make_link_group_package(
-        actions,
-        LinkStyle("shared"),
-        arg.pkgname,
-        arg.libname,
-        arg.registerer,
-        arg.haskell_toolchain,
-        db,
-        arg.hlibs
+    toolchain_deps = [d.name for d in arg.toolchain_deps]
+    package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
+
+    package_db_tset = actions.tset(
+        HaskellPackageDbTSet,
+        children = [package_db[name] for name in toolchain_deps if name in package_db]
     )
+    packagedb_args = cmd_args()
+    packagedb_args.add(package_db_tset.project_as_args("package_db"))
+    link_args.add(cmd_args(packagedb_args, prepend = "-package-db"))
+
+    link_args.add(cmd_args(toolchain_deps, prepend = "-package"))
 
     for hlib in arg.hlibs:
         is_profiled = False
@@ -1875,6 +1883,19 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg):
         category  = "haskell_link_group_shared",
         identifier = arg.libname
     )
+
+    _make_link_group_package(
+        actions,
+        LinkStyle("shared"),
+        arg.pkgname,
+        arg.libname,
+        arg.registerer,
+        arg.haskell_toolchain,
+        db,
+        arg.hlibs,
+        toolchain_lib_dyn_infos,
+    )
+
     return []
 
 _dynamic_link_group_shared = dynamic_actions(
@@ -1883,6 +1904,8 @@ _dynamic_link_group_shared = dynamic_actions(
         "lib": dynattrs.output(),
         "db": dynattrs.output(),
         "arg": dynattrs.value(typing.Any),
+        "toolchain_lib_dyn_infos": dynattrs.list(dynattrs.dynamic_value()),
+        "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
     },
 )
 
@@ -1920,6 +1943,17 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
     hlibs = [l.get(HaskellLibraryProvider).lib[LinkStyle("shared")] for l in ctx.attrs.deps]
 
+
+    direct_deps_info = [ lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx) ]
+    tset = ctx.actions.tset(
+        HaskellLibraryInfoTSet,
+        children = direct_deps_info,
+    )
+    toolchain_deps = tset.reduce("toolchain_packages")
+    toolchain_lib_dyn_infos = [dep.dynamic for dep in toolchain_deps]
+
+    pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
+
     ctx.actions.dynamic_output_new(_dynamic_link_group_shared(
         lib = lib.as_output(),
         db = db.as_output(),
@@ -1931,7 +1965,10 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
             linker_info = linker_info,
             registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
             haskell_toolchain = haskell_toolchain,
+            toolchain_deps = toolchain_deps,
         ),
+        toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
+        pkg_deps = pkg_deps,
     ))
 
     return [
