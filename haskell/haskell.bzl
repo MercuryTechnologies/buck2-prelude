@@ -578,13 +578,7 @@ def _write_package_conf_impl(
         conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
         conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in arg.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
+    for l in arg.extra_libraries:
         conf.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "library-dirs: "))
         conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
 
@@ -658,6 +652,13 @@ def _make_package(
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + ".conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
 
+    # extra-libraries
+    extra_libraries = [
+        lib[NativeToolchainLibrary]
+        for lib in ctx.attrs.extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
+
     arg = struct(
         for_deps = for_deps,
         profiling = profiling,
@@ -671,7 +672,7 @@ def _make_package(
         strip_prefix = ctx.attrs.strip_prefix,
         haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo],
         registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
-        extra_libraries = ctx.attrs.extra_libraries,
+        extra_libraries = extra_libraries,
     )
 
     toolchain_libs = attr_deps_haskell_toolchain_libraries(ctx)
@@ -771,13 +772,7 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
 
     link_cmd_hidden.append(unpack_link_args(arg.infos))
 
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in arg.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
+    for l in arg.extra_libraries:
         link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         link_args.add(cmd_args("-l{}".format(l.name)))
 
@@ -869,6 +864,13 @@ def _build_haskell_lib(
     toolchain_libs_full = attr_deps_haskell_toolchain_libraries(ctx)
     project_libs_full = attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)
 
+    # extra-libraries
+    extra_libraries = [
+        lib[NativeToolchainLibrary]
+        for lib in ctx.attrs.extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
+
     if link_style == LinkStyle("shared"):
         lib = ctx.actions.declare_output(lib_short_path)
         objects = [
@@ -916,7 +918,7 @@ def _build_haskell_lib(
                 project_libs_full = project_libs_full,
                 use_argsfile_at_link = ctx.attrs.use_argsfile_at_link,
                 worker_target_id = pkgname,
-                extra_libraries = ctx.attrs.extra_libraries,
+                extra_libraries = extra_libraries,
             ),
         ))
 
@@ -991,6 +993,7 @@ def _build_haskell_lib(
             True: compiled.hie,
             False: non_profiling_hlib.compiled.hie,
         }
+        extra_libraries = extra_libraries
         all_libs = libs + non_profiling_hlib.libs
         stub_dirs = [compiled.stubs] + [non_profiling_hlib.compiled.stubs]
     else:
@@ -1006,6 +1009,7 @@ def _build_haskell_lib(
         hie_artifacts = {
             False: compiled.hie,
         }
+        extra_libraries = extra_libraries
         all_libs = libs
         stub_dirs = [compiled.stubs]
 
@@ -1056,6 +1060,7 @@ def _build_haskell_lib(
         objects = object_artifacts,
         hie_files = hie_artifacts,
         stub_dirs = stub_dirs,
+        extra_libraries = extra_libraries,
         libs = all_libs,
         version = "1.0.0",
         is_prebuilt = False,
@@ -1474,13 +1479,7 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
     link_args.add(arg.haskell_toolchain.linker_flags)
     link_args.add(arg.linker_flags)
 
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in arg.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
+    for l in arg.extra_libraries:
         link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         link_args.add("-l{}".format(l.name))
 
@@ -1559,6 +1558,13 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     link = cmd_args(haskell_toolchain.compiler)
 
     objects = {}
+
+    # extra-libraries
+    extra_libraries = [
+        lib[NativeToolchainLibrary]
+        for lib in ctx.attrs.extra_libraries
+        if NativeToolchainLibrary in lib
+    ]
 
     # only add the first object per module
     # TODO[CB] restructure this to use a record / dict for compiled.objects
@@ -1768,7 +1774,7 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
             direct_deps_info = direct_deps_info,
             link_group_libs = link_group_libs,
             toolchain_libs = toolchain_libs,
-            extra_libraries = ctx.attrs.extra_libraries,
+            extra_libraries = extra_libraries,
         ),
     ))
 
