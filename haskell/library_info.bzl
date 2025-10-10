@@ -6,7 +6,11 @@
 # of this source tree.
 
 load("@prelude//utils:utils.bzl", "flatten", "dedupe_by_value")
-load("@prelude//haskell:toolchain.bzl", "HaskellToolchainLibrary")
+load(
+    "@prelude//haskell:toolchain.bzl",
+    "HaskellToolchainLibrary",
+    "NativeToolchainLibrary",
+)
 
 # If the target is a haskell library, the HaskellLibraryProvider
 # contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
@@ -41,6 +45,8 @@ HaskellLibraryInfo = record(
     # HIE files indexed by profiling enabled/disabled
     hie_files = dict[bool, list[Artifact]],
     stub_dirs = list[Artifact],
+    # extra non-Haskell libraries
+    extra_libraries = field(list[NativeToolchainLibrary], []),
 
     # This field is only used as hidden inputs to compilation, to
     # support Template Haskell which may need access to the libraries
