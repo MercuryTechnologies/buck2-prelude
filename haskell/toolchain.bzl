@@ -11,23 +11,32 @@ HaskellPlatformInfo = provider(fields = {
     "name": provider_field(typing.Any, default = None),
 })
 
+HaskellPackagesInfo = record(
+    dynamic = DynamicValue,
+)
+
+HaskellPackage = record(
+    db = ArgLike,
+    path = Artifact,
+)
+
 HaskellToolchainInfo = provider(
     # @unsorted-dict-items
     fields = {
-        "compiler": provider_field(typing.Any, default = None),
+        "compiler": provider_field(RunInfo),
         "compiler_flags": provider_field(typing.Any, default = None),
-        "linker": provider_field(typing.Any, default = None),
+        "linker": provider_field(RunInfo),
         "linker_flags": provider_field(typing.Any, default = None),
-        "haddock": provider_field(typing.Any, default = None),
-        "compiler_major_version": provider_field(typing.Any, default = None),
+        "haddock": provider_field(RunInfo),
+        "compiler_major_version": provider_field(str | None, default = None),
         "package_name_prefix": provider_field(typing.Any, default = None),
-        "packager": provider_field(typing.Any, default = None),
-        "use_argsfile": provider_field(typing.Any, default = None),
+        "packager": provider_field(RunInfo),
+        "use_argsfile": provider_field(bool, default = False),
         "support_expose_package": provider_field(bool, default = False),
         "archive_contents": provider_field(typing.Any, default = None),
-        "ghci_script_template": provider_field(typing.Any, default = None),
-        "ghci_iserv_template": provider_field(typing.Any, default = None),
-        "ide_script_template": provider_field(typing.Any, default = None),
+        "ghci_script_template": provider_field(Artifact | None, default = None),
+        "ghci_iserv_template": provider_field(Artifact | None, default = None),
+        "ide_script_template": provider_field(Artifact | None, default = None),
         "ghci_binutils_path": provider_field(typing.Any, default = None),
         "ghci_lib_path": provider_field(typing.Any, default = None),
         "ghci_ghc_path": provider_field(typing.Any, default = None),
@@ -38,12 +47,12 @@ HaskellToolchainInfo = provider(
         "ghci_cpp_path": provider_field(typing.Any, default = None),
         "ghci_packager": provider_field(typing.Any, default = None),
         "cache_links": provider_field(typing.Any, default = None),
-        "script_template_processor": provider_field(typing.Any, default = None),
-        "packages": provider_field(typing.Any, default = None),
-        "use_persistent_workers": provider_field(typing.Any, default = None),
+        "script_template_processor": provider_field(Dependency | None, default = None),
+        "packages": provider_field(HaskellPackagesInfo | None, default = None),
+        "use_persistent_workers": provider_field(bool, default = False),
         "use_worker": provider_field(bool, default = False),
         "worker_make": provider_field(bool, default = False),
-        "ghc_dir": provider_field(typing.Any, default = None),
+        "ghc_dir": provider_field(Artifact | None, default = None),
         # RTS options passed to GHC, changing the behavior of the compiler process, not the resulting binaries like
         # `-with-rtsopts` would.
         "ghc_rts_flags": provider_field(typing.Any, default = None),
@@ -63,15 +72,6 @@ DynamicHaskellToolchainLibraryInfo = provider(
     },
 )
 
-HaskellPackagesInfo = record(
-    dynamic = DynamicValue,
-)
-
-HaskellPackage = record(
-    db = ArgLike,
-    path = Artifact,
-)
-
 def _haskell_package_info_as_package_db(p: HaskellPackage):
     return cmd_args(p.db)
 
@@ -84,7 +84,7 @@ HaskellPackageDbTSet = transitive_set(
     },
     reductions = {
         "root": _haskell_package_set_root,
-    }
+    },
 )
 
 DynamicHaskellPackageDbInfo = provider(fields = {
