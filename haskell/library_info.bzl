@@ -8,7 +8,6 @@
 load(
     "@prelude//haskell:toolchain.bzl",
     "HaskellToolchainLibrary",
-    "NativeToolchainLibrary",
 )
 load(
     "@prelude//linking:link_info.bzl",
@@ -38,7 +37,7 @@ HaskellLibraryInfo = record(
     hie_files = dict[bool, list[Artifact]],
     stub_dirs = list[Artifact],
     # extra non-Haskell libraries
-    extra_libraries = field(list[NativeToolchainLibrary], []),
+    extra_libraries = field(list[Dependency], []),
 
     # This field is only used as hidden inputs to compilation, to
     # support Template Haskell which may need access to the libraries

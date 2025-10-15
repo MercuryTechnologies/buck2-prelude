@@ -28,7 +28,6 @@ load(
     "HaskellPackageDbTSet",
     "HaskellToolchainInfo",
     "HaskellToolchainLibrary",
-    "NativeToolchainLibrary",
 )
 load(
     "@prelude//haskell:util.bzl",
@@ -50,6 +49,10 @@ load(
 load(
     "@prelude//linking:link_info.bzl",
     "LinkStyle",
+    "MergedLinkInfo",
+    "get_link_args_for_strategy",
+    "to_link_strategy",
+    "unpack_link_args",
 )
 load("@prelude//utils:argfile.bzl", "argfile", "at_argfile")
 load("@prelude//utils:arglike.bzl", "ArgLike")
@@ -158,6 +161,7 @@ _DynamicDoCompileOptions = record(
     haskell_toolchain = HaskellToolchainInfo,
     label = Label,
     link_style = LinkStyle,
+    link_args = ArgLike,
     main = str | None,
     md_file = Artifact,
     modules = dict[str, _Module],
@@ -166,7 +170,6 @@ _DynamicDoCompileOptions = record(
     sources_deps = dict[typing.Any, list[typing.Any]],  # Source -> list[Source].
     srcs_envs = dict[typing.Any, dict[str, typing.Any]],  # Source -> (str -> Argument).
     toolchain_deps_by_name = dict[str, None],
-    extra_libraries = list[Dependency],
     worker = WorkerInfo | None,
     allow_worker = bool,
     link_group_libs = list[HaskellLinkGroupInfo],
@@ -462,7 +465,6 @@ def _dynamic_target_metadata_impl(
     md_args.add("--unit-args", ghc_args_file)
 
     if arg.allow_worker and haskell_toolchain.use_worker and haskell_toolchain.worker_make:
-
         bp_args = cmd_args()
         bp_args.add("-M")
         bp_args.add("--ghc-dir", haskell_toolchain.ghc_dir)
@@ -797,7 +799,6 @@ def _common_compile_module_args(
         label: Label,
         deps: list[Dependency],
         external_tool_paths: list[RunInfo],
-        extra_libraries: list[Dependency],
         sources: list[Artifact],
         direct_deps_info: list[HaskellLibraryInfoTSet],
         allow_worker: bool,
@@ -933,6 +934,7 @@ def _compile_oneshot_args(
         actions: AnalysisActions,
         common_args: CommonCompileModuleArgs,
         link_style: LinkStyle,
+        link_args: ArgLike,
         enable_th: bool,
         module: _Module,
         md_file: Artifact,
@@ -940,8 +942,7 @@ def _compile_oneshot_args(
         artifact_suffix: str,
         library_deps: list[str],
         toolchain_deps: list[str],
-        extra_libraries: list[Dependency],
-        packagedb_tag: ArtifactTag):
+        packagedb_tag: ArtifactTag) -> cmd_args:
     args = cmd_args()
     args.add(packagedb_tag.tag_artifacts(common_args.package_env_args))
 
@@ -971,15 +972,7 @@ def _compile_oneshot_args(
         args.add("-dyno", objects[1])
         args.add("-dynohi", his[1])
 
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
-        args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        args.add("-l{}".format(l.name))
+    args.add(link_args)
 
     args.add(
         cmd_args(
@@ -1081,6 +1074,7 @@ def _compile_module(
         *,
         common_args: CommonCompileModuleArgs,
         link_style: LinkStyle,
+        link_args: ArgLike,
         enable_profiling: bool,
         enable_th: bool,
         haskell_toolchain: HaskellToolchainInfo,
@@ -1097,7 +1091,6 @@ def _compile_module(
         toolchain_deps_by_name: dict[str, None],
         aux_deps: None | list[Artifact],
         src_envs: None | dict[str, ArgLike],
-        extra_libraries: list[Dependency],
         worker: None | WorkerInfo,
         allow_worker: bool) -> CompiledModuleTSet:
     use_worker = allow_worker and haskell_toolchain.use_worker
@@ -1189,6 +1182,7 @@ def _compile_module(
             actions,
             common_args = common_args,
             link_style = link_style,
+            link_args = link_args,
             enable_th = enable_th,
             module = module,
             md_file = md_file,
@@ -1196,7 +1190,6 @@ def _compile_module(
             artifact_suffix = artifact_suffix,
             library_deps = library_deps,
             toolchain_deps = toolchain_deps,
-            extra_libraries = extra_libraries,
             packagedb_tag = packagedb_tag,
         ))
 
@@ -1294,6 +1287,7 @@ def _compile_incr(
             src_envs = arg.srcs_envs.get(module.source),
             common_args = common_args,
             link_style = arg.link_style,
+            link_args = arg.link_args,
             enable_profiling = arg.enable_profiling,
             enable_th = module_name in th_modules,
             haskell_toolchain = arg.haskell_toolchain,
@@ -1308,7 +1302,6 @@ def _compile_incr(
             artifact_suffix = arg.artifact_suffix,
             direct_deps_by_name = direct_deps_by_name,
             toolchain_deps_by_name = arg.toolchain_deps_by_name,
-            extra_libraries = arg.extra_libraries,
             worker = arg.worker,
             allow_worker = arg.allow_worker,
         )
@@ -1323,10 +1316,10 @@ def compile_args(
         sources: list[typing.Any],  # Source.
         external_tool_paths: list[RunInfo],
         link_style: LinkStyle,
+        link_args: ArgLike,
         enable_profiling: bool,
         direct_deps_link_info: list[HaskellLinkInfo],
         haskell_direct_deps_lib_infos: list[HaskellLibraryInfo],
-        extra_libraries: list[Dependency],
         package_env_args: cmd_args,
         target_deps_args: cmd_args,
         link_group_libs: list[HaskellLinkGroupInfo],
@@ -1339,15 +1332,8 @@ def compile_args(
     # be parsed when inside an argsfile.
     compile_cmd.add(compiler_flags)
 
-    # extra-libraries
-    extra_libs = [
-        lib[NativeToolchainLibrary]
-        for lib in extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
-    for l in extra_libs:
-        compile_cmd.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        compile_cmd.add("-l{}".format(l.name))
+    # `extra-libraries` or other linker flags.
+    compile_cmd.add(link_args)
 
     compile_cmd.add("-fbyte-code-and-object-code")
     compile_cmd.add("-fprefer-byte-code")
@@ -1524,9 +1510,9 @@ def _compile_non_incr(
         sources = arg.sources,
         external_tool_paths = arg.external_tool_paths,
         link_style = link_style,
+        link_args = arg.link_args,
         direct_deps_link_info = arg.direct_deps_link_info,
         haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
-        extra_libraries = arg.extra_libraries,
         enable_profiling = enable_profiling,
         package_env_args = common_args.package_env_args,
         target_deps_args = common_args.target_deps_args,
@@ -1595,7 +1581,6 @@ def _dynamic_do_compile_impl(
         incremental = incremental,
         deps = arg.deps,
         external_tool_paths = arg.external_tool_paths,
-        extra_libraries = arg.extra_libraries,
         ghc_wrapper = arg.ghc_wrapper,
         haskell_toolchain = arg.haskell_toolchain,
         label = arg.label,
@@ -1718,6 +1703,16 @@ def compile(
         enable_profiling = False,
     )
 
+    link_args = unpack_link_args(get_link_args_for_strategy(
+        ctx,
+        [
+            lib[MergedLinkInfo]
+            for lib in ctx.attrs.extra_libraries
+            if MergedLinkInfo in lib
+        ],
+        to_link_strategy(link_style),
+    ))
+
     dyn_module_tsets = ctx.actions.dynamic_output_new(_dynamic_do_compile(
         incremental = incremental,
         md_file = md_file,
@@ -1743,6 +1738,7 @@ def compile(
             haskell_toolchain = haskell_toolchain,
             label = ctx.label,
             link_style = link_style,
+            link_args = link_args,
             main = getattr(ctx.attrs, "main", None),
             md_file = md_file,
             modules = modules,
@@ -1751,7 +1747,6 @@ def compile(
             sources_deps = ctx.attrs.srcs_deps,
             srcs_envs = ctx.attrs.srcs_envs,
             toolchain_deps_by_name = toolchain_deps_by_name,
-            extra_libraries = ctx.attrs.extra_libraries,
             worker = worker,
             allow_worker = ctx.attrs.allow_worker,
             link_group_libs = attr_deps_haskell_link_group_infos(ctx),

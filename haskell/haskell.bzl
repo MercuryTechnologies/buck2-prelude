@@ -55,7 +55,6 @@ load(
     "@prelude//haskell:compile.bzl",
     "CompileResultInfo",
     "compile",
-    "get_packages_info",
     "target_metadata",
 )
 load(
@@ -83,7 +82,6 @@ load(
     "HaskellPackageDbTSet",
     "HaskellToolchainInfo",
     "HaskellToolchainLibrary",
-    "NativeToolchainLibrary",
 )
 load(
     "@prelude//haskell:util.bzl",
@@ -123,12 +121,14 @@ load(
     "LinkedObject",
     "MergedLinkInfo",
     "SharedLibLinkable",
+    "append_linkable_args",
     "create_merged_link_info",
     "default_output_style_for_link_strategy",
     "get_lib_output_style",
     "get_link_args_for_strategy",
     "get_output_styles_for_linkage",
     "legacy_output_style_to_link_style",
+    "map_to_link_infos",
     "to_link_strategy",
     "unpack_link_args",
 )
@@ -161,6 +161,7 @@ load("@prelude//utils:argfile.bzl", "at_argfile")
 load("@prelude//utils:arglike.bzl", "ArgLike")
 load("@prelude//utils:set.bzl", "set")
 load("@prelude//utils:utils.bzl", "filter_and_map_idx", "flatten")
+load(":pkg_conf.bzl", "append_pkg_conf_link_fields_for_link_infos")
 
 HaskellIndexingTSet = transitive_set()
 
@@ -513,6 +514,9 @@ _WritePackageConfOptions = record(
     for_deps = bool,
     profiling = list[bool],
     link_style = LinkStyle,
+    # NB: We only expect to need one `LinkInfo` here, but `map_to_link_infos`
+    # returns a list, so it may be more convenient to use a list in the future.
+    link_infos = list[LinkInfo],
     pkgname = str,
     hlis = list[HaskellLibraryInfo],
     use_empty_lib = bool,
@@ -522,7 +526,6 @@ _WritePackageConfOptions = record(
     strip_prefix = list[str],
     haskell_toolchain = HaskellToolchainInfo,
     registerer = RunInfo,
-    extra_libraries = list[NativeToolchainLibrary],
 )
 
 def _write_package_conf_impl(
@@ -592,9 +595,11 @@ def _write_package_conf_impl(
         conf.add(cmd_args(cmd_args(library_dirs, delimiter = ","), format = "library-dirs: {}"))
         conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
-    for l in arg.extra_libraries:
-        conf.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "library-dirs: "))
-        conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
+    append_pkg_conf_link_fields_for_link_infos(
+        pkgname = arg.pkgname,
+        pkg_conf = conf,
+        link_infos = arg.link_infos,
+    )
 
     pkg_conf_artifact = actions.write(pkg_conf, conf)
 
@@ -665,17 +670,23 @@ def _make_package(
         pkg_conf = ctx.actions.declare_output("pkg-" + artifact_suffix + ".conf")
         db = ctx.actions.declare_output("db-" + artifact_suffix, dir = True)
 
-    # extra-libraries
-    extra_libraries = [
-        lib[NativeToolchainLibrary]
-        for lib in ctx.attrs.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
+    link_infos = map_to_link_infos([
+        get_link_args_for_strategy(
+            ctx,
+            [
+                lib[MergedLinkInfo]
+                for lib in ctx.attrs.extra_libraries
+                if MergedLinkInfo in lib
+            ],
+            to_link_strategy(link_style),
+        ),
+    ])
 
     arg = _WritePackageConfOptions(
         for_deps = for_deps,
         profiling = profiling,
         link_style = link_style,
+        link_infos = link_infos,
         pkgname = pkgname,
         hlis = hlis,
         use_empty_lib = use_empty_lib,
@@ -685,7 +696,6 @@ def _make_package(
         strip_prefix = ctx.attrs.strip_prefix,
         haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo],
         registerer = ctx.attrs._ghc_pkg_registerer[RunInfo],
-        extra_libraries = extra_libraries,
     )
 
     toolchain_libs = attr_deps_haskell_toolchain_libraries(ctx)
@@ -730,6 +740,7 @@ _DynamicLinkSharedOptions = record(
     artifact_suffix = str,
     haskell_toolchain = HaskellToolchainInfo,
     infos = LinkArgs,
+    link_args = ArgLike,  # TODO: is this redundant with `infos`?
     haskell_direct_deps_lib_infos = list[HaskellLibraryInfo],
     direct_deps_info = list[HaskellLibraryInfoTSet],
     lib = Artifact,
@@ -744,7 +755,6 @@ _DynamicLinkSharedOptions = record(
     project_libs_full = list[HaskellLibraryInfo],
     use_argsfile_at_link = bool,
     worker_target_id = str,
-    extra_libraries = list[NativeToolchainLibrary],
 )
 
 def _dynamic_link_shared_impl(
@@ -810,9 +820,7 @@ def _dynamic_link_shared_impl(
 
     link_cmd_hidden.append(unpack_link_args(arg.infos))
 
-    for l in arg.extra_libraries:
-        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        link_args.add(cmd_args("-l{}".format(l.name)))
+    link_args.add(arg.link_args)
 
     if arg.use_argsfile_at_link:
         link_cmd_args.append(at_argfile(
@@ -866,6 +874,9 @@ def _build_haskell_lib(
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
     # Compile the sources
+    #
+    # TODO: This computes `link_args` from `ctx.attrs.extra_libraries` like we
+    # do below, I think it may put in duplicate `link_args` at some point.
     compiled = compile(
         ctx,
         link_style,
@@ -903,11 +914,15 @@ def _build_haskell_lib(
     project_libs_full = attr_deps_haskell_lib_infos(ctx, link_style, enable_profiling)
 
     # extra-libraries
-    extra_libraries = [
-        lib[NativeToolchainLibrary]
-        for lib in ctx.attrs.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
+    link_args = unpack_link_args(get_link_args_for_strategy(
+        ctx,
+        [
+            lib[MergedLinkInfo]
+            for lib in ctx.attrs.extra_libraries
+            if MergedLinkInfo in lib
+        ],
+        to_link_strategy(link_style),
+    ))
 
     if link_style == LinkStyle("shared"):
         lib = ctx.actions.declare_output(lib_short_path)
@@ -955,7 +970,7 @@ def _build_haskell_lib(
                 project_libs_full = project_libs_full,
                 use_argsfile_at_link = ctx.attrs.use_argsfile_at_link,
                 worker_target_id = pkgname,
-                extra_libraries = extra_libraries,
+                link_args = link_args,
             ),
         ))
 
@@ -1028,7 +1043,6 @@ def _build_haskell_lib(
             True: compiled.hie,
             False: non_profiling_hlib.compiled.hie,
         }
-        extra_libraries = extra_libraries
         all_libs = libs + non_profiling_hlib.libs
         stub_dirs = [compiled.stubs] + [non_profiling_hlib.compiled.stubs]
     else:
@@ -1044,7 +1058,6 @@ def _build_haskell_lib(
         hie_artifacts = {
             False: compiled.hie,
         }
-        extra_libraries = extra_libraries
         all_libs = libs
         stub_dirs = [compiled.stubs]
 
@@ -1094,7 +1107,7 @@ def _build_haskell_lib(
         objects = object_artifacts,
         hie_files = hie_artifacts,
         stub_dirs = stub_dirs,
-        extra_libraries = extra_libraries,
+        extra_libraries = ctx.attrs.extra_libraries,
         libs = all_libs,
         version = "1.0.0",
         is_prebuilt = False,
@@ -1482,7 +1495,6 @@ _DynamicLinkBinaryOptions = record(
     direct_deps_info = list[HaskellLibraryInfoTSet],
     link_group_libs = list[HaskellLinkGroupInfo],
     toolchain_libs = list[str],
-    extra_libraries = list[NativeToolchainLibrary],
 )
 
 def _dynamic_link_binary_impl(
@@ -1534,10 +1546,6 @@ def _dynamic_link_binary_impl(
 
     link_args.add(arg.haskell_toolchain.linker_flags)
     link_args.add(arg.linker_flags)
-
-    for l in arg.extra_libraries:
-        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        link_args.add("-l{}".format(l.name))
 
     link_args.add("-o", output)
 
@@ -1616,11 +1624,15 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     objects = {}
 
     # extra-libraries
-    extra_libraries = [
-        lib[NativeToolchainLibrary]
-        for lib in ctx.attrs.extra_libraries
-        if NativeToolchainLibrary in lib
-    ]
+    link.add(unpack_link_args(get_link_args_for_strategy(
+        ctx,
+        [
+            lib[MergedLinkInfo]
+            for lib in ctx.attrs.extra_libraries
+            if MergedLinkInfo in lib
+        ],
+        to_link_strategy(link_style),
+    )))
 
     # only add the first object per module
     # TODO[CB] restructure this to use a record / dict for compiled.objects
@@ -1830,7 +1842,6 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
             direct_deps_info = direct_deps_info,
             link_group_libs = link_group_libs,
             toolchain_libs = toolchain_libs,
-            extra_libraries = extra_libraries,
         ),
     ))
 
@@ -1897,7 +1908,9 @@ def _haskell_module_sub_targets(
 #
 def _make_link_group_package(
         actions: AnalysisActions,
+        *,
         link_style: LinkStyle,
+        link_infos: list[LinkInfo],
         pkgname: str,
         libname: str,
         registerer: RunInfo,
@@ -1905,8 +1918,7 @@ def _make_link_group_package(
         db: OutputArtifact,
         hlibs: list[HaskellLibraryInfo],
         project_deps: list[str],
-        extra_libraries: list[NativeToolchainLibrary],
-        toolchain_lib_dyn_infos: list[ResolvedDynamicValue]):
+        toolchain_lib_dyn_infos: list[ResolvedDynamicValue]) -> None:
     artifact_suffix = get_artifact_suffix(link_style, False)
 
     toolchain_deps = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
@@ -1929,9 +1941,11 @@ def _make_link_group_package(
     conf.add(cmd_args(libname, format = "hs-libraries: {}"))
 
     # collect all the extra library dependencies from component Haskell libraries
-    for l in extra_libraries:
-        conf.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "library-dirs: "))
-        conf.add(cmd_args(l.name, format = "extra-libraries: {}"))
+    append_pkg_conf_link_fields_for_link_infos(
+        pkgname = pkgname,
+        pkg_conf = conf,
+        link_infos = link_infos,
+    )
 
     pkg_conf = actions.write("pkg-" + artifact_suffix, conf)
 
@@ -1957,7 +1971,7 @@ _DynamicLinkGroupSharedOptions = record(
     toolchain_deps = list[HaskellToolchainLibrary],
     project_deps = list[str],
     libs_tset = HaskellLibraryInfoTSet,
-    extra_libraries = list[NativeToolchainLibrary],
+    link_args = LinkArgs,
 )
 
 # Implement dynamic library linking for a link group
@@ -2008,9 +2022,7 @@ def _dynamic_link_group_shared_impl(
         for o in hlib.objects[is_profiled]:
             link_args.add(o)
 
-    for l in arg.extra_libraries:
-        link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
-        link_args.add(cmd_args(l.name, format = "-l{}"))
+    link_args.add(unpack_link_args(arg.link_args))
 
     link_args.add(
         get_shared_library_flags(arg.linker_info.type),
@@ -2040,16 +2052,16 @@ def _dynamic_link_group_shared_impl(
 
     _make_link_group_package(
         actions,
-        LinkStyle("shared"),
-        arg.pkgname,
-        arg.libname,
-        arg.registerer,
-        arg.haskell_toolchain,
-        db,
-        arg.hlibs,
-        arg.project_deps,
-        arg.extra_libraries,
-        toolchain_lib_dyn_infos,
+        link_style = LinkStyle("shared"),
+        link_infos = map_to_link_infos([arg.link_args]),
+        pkgname = arg.pkgname,
+        libname = arg.libname,
+        registerer = arg.registerer,
+        haskell_toolchain = arg.haskell_toolchain,
+        db = db,
+        hlibs = arg.hlibs,
+        project_deps = arg.project_deps,
+        toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
     )
 
     return []
@@ -2070,6 +2082,7 @@ _dynamic_link_group_shared = dynamic_actions(
 # This saves linking time.
 def make_haskell_link_group(
         actions: AnalysisActions,
+        *,
         label: Label,
         hlibs: list[HaskellLibraryInfo],
         direct_deps_info: list[HaskellLibraryInfoTSet],
@@ -2077,7 +2090,8 @@ def make_haskell_link_group(
         enable_profiling: bool,
         registerer: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
-        linker_info: LinkerInfo) -> list[Provider]:
+        linker_info: LinkerInfo,
+        link_args: LinkArgs) -> list[Provider]:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
     static_lib_suffix = "_p.a" if enable_profiling else ".a"
@@ -2117,9 +2131,6 @@ def make_haskell_link_group(
 
     pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
 
-    # collect all the extra library dependencies from component Haskell libraries
-    direct_extra_libs = [elib for lib in hlibs for elib in lib.extra_libraries]
-
     actions.dynamic_output_new(_dynamic_link_group_shared(
         lib = lib.as_output(),
         db = db.as_output(),
@@ -2134,7 +2145,7 @@ def make_haskell_link_group(
             toolchain_deps = toolchain_deps,
             project_deps = project_deps,
             libs_tset = libs_tset,
-            extra_libraries = direct_extra_libs,
+            link_args = link_args,
         ),
         toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
         pkg_deps = pkg_deps,
@@ -2162,15 +2173,28 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in ctx.attrs.deps]
     direct_deps_info = [lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx)]
 
+    # collect all the extra library dependencies from component Haskell libraries
+    direct_extra_libs = [elib for lib in hlibs for elib in lib.extra_libraries]
+    link_args = get_link_args_for_strategy(
+        ctx,
+        [
+            lib[MergedLinkInfo]
+            for lib in direct_extra_libs
+            if MergedLinkInfo in lib
+        ],
+        to_link_strategy(link_style),
+    )
+
     results = make_haskell_link_group(
         ctx.actions,
-        ctx.label,
-        hlibs,
-        direct_deps_info,
-        link_style,
-        enable_profiling,
-        registerer,
-        haskell_toolchain,
-        linker_info,
+        label = ctx.label,
+        hlibs = hlibs,
+        direct_deps_info = direct_deps_info,
+        link_style = link_style,
+        enable_profiling = enable_profiling,
+        registerer = registerer,
+        haskell_toolchain = haskell_toolchain,
+        linker_info = linker_info,
+        link_args = link_args,
     )
     return results
