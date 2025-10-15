@@ -1281,12 +1281,12 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
     #    )]
     pp = []
 
-    haddock, = haskell_haddock_lib(
+    haddock = haskell_haddock_lib(
         ctx,
         pkgname,
         non_profiling_hlib[LinkStyle("shared")].compiled,
         md_file,
-    ),
+    )
 
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
