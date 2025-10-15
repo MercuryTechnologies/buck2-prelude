@@ -148,7 +148,15 @@ def _strip_prefix(prefix, s):
 
     return stripped if stripped != None else s
 
-def _modules_by_name(ctx: AnalysisContext, *, sources: list[Artifact], link_style: LinkStyle, enable_profiling: bool, suffix: str, module_prefix: str | None, is_haskell_binary: bool) -> dict[str, _Module]:
+def _modules_by_name(
+        ctx: AnalysisContext,
+        *,
+        sources: list[Artifact],
+        link_style: LinkStyle,
+        enable_profiling: bool,
+        suffix: str,
+        module_prefix: str | None,
+        is_haskell_binary: bool) -> dict[str, _Module]:
     modules = {}
 
     osuf, hisuf = output_extensions(link_style, enable_profiling)
@@ -308,11 +316,10 @@ MetadataUnitParams = record(
 )
 
 def metadata_unit_args(
-    actions: AnalysisActions,
-    arg: MetadataUnitParams,
-    packages_info: PackagesInfo,
-    output: OutputArtifact) -> (cmd_args, cmd_args):
-
+        actions: AnalysisActions,
+        arg: MetadataUnitParams,
+        packages_info: PackagesInfo,
+        output: OutputArtifact) -> (cmd_args, cmd_args):
     # Configure all output directories to use e.g. `mod-shared` next to the metadata file (`output`).
     output_dir = cmd_args(
         [cmd_args(output, ignore_artifacts = True, parent = 1), "mod-" + arg.unit.artifact_suffix],
@@ -324,11 +331,10 @@ def metadata_unit_args(
     add_output_dirs(ghc_args, output_dir)
 
     package_flag = _package_flag(arg.unit.haskell_toolchain)
-    ghc_args.add(cmd_args(arg.toolchain_libs, prepend=package_flag))
-
+    ghc_args.add(cmd_args(arg.toolchain_libs, prepend = package_flag))
 
     ghc_args.add(cmd_args(packages_info.exposed_package_args))
-    ghc_args.add(cmd_args(packages_info.packagedb_args, prepend="-package-db"))
+    ghc_args.add(cmd_args(packages_info.packagedb_args, prepend = "-package-db"))
     ghc_args.add("-fprefer-byte-code")
     ghc_args.add("-fpackage-db-byte-code")
 
@@ -353,10 +359,10 @@ MetadataParams = record(
 )
 
 def _dynamic_target_metadata_impl(
-    actions: AnalysisActions,
-    output: OutputArtifact,
-    arg: MetadataParams,
-    pkg_deps: None | ResolvedDynamicValue) -> list[Provider]:
+        actions: AnalysisActions,
+        output: OutputArtifact,
+        arg: MetadataParams,
+        pkg_deps: None | ResolvedDynamicValue) -> list[Provider]:
     munit = arg.unit
     unit = munit.unit
     haskell_toolchain = unit.haskell_toolchain
@@ -427,7 +433,7 @@ def _dynamic_target_metadata_impl(
         ))
         bp_args.add(transitive_metadata(actions, unit.name, packages_info))
         bp_args.add("--unit", unit.name)
-        bp_args.add(cmd_args(ghc_args_file, prepend="--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
+        bp_args.add(cmd_args(ghc_args_file, prepend = "--ghc-args", hidden = [build_plan.as_output(), makefile.as_output()]))
 
         actions.run(
             bp_args,
@@ -555,7 +561,7 @@ def _attr_deps_haskell_lib_package_name_and_prefix(ctx: AnalysisContext, link_st
             continue
 
         lib_info = lib.lib[link_style]
-        if(lib_info.deps_db):
+        if (lib_info.deps_db):
             pkg_root = cmd_args(lib_info.deps_db, parent = 1)
         else:
             pkg_root = cmd_args(lib_info.db, parent = 1)
@@ -716,8 +722,7 @@ def _common_compile_wrapper_args(
         ghc_wrapper: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
         pkgname: str,
-        use_worker: bool,
-) -> cmd_args:
+        use_worker: bool) -> cmd_args:
     args = cmd_args()
 
     if use_worker:
@@ -790,7 +795,6 @@ def _common_compile_module_args(
     command = _common_compile_wrapper_args(ghc_wrapper, haskell_toolchain, pkgname, use_worker)
 
     if not worker_make:
-
         # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
         # be parsed when inside an argsfile.
         add_rts_flags(oneshot_wrapper_args, haskell_toolchain.ghc_rts_flags)
@@ -836,9 +840,9 @@ def _common_compile_module_args(
             packagedb_args = cmd_args()
             for d in list(libs.traverse()):
                 if d.name in all_link_group_ids:
-                     packagedb_args.add(cmd_args(d.empty_db))
+                    packagedb_args.add(cmd_args(d.empty_db))
                 else:
-                     packagedb_args.add(cmd_args(d.db))
+                    packagedb_args.add(cmd_args(d.db))
         for lg in arg.link_group_libs:
             packagedb_args.add(cmd_args(lg.db))
 
@@ -1021,8 +1025,7 @@ def _compile_make_args(
 def _shared_wrapper_args(
         tagged_dep_file: TaggedCommandLine | TaggedValue,
         module: _Module,
-        outputs: dict[Artifact, OutputArtifact],
-    ) -> cmd_args:
+        outputs: dict[Artifact, OutputArtifact]) -> cmd_args:
     args = cmd_args()
     args.add("--buck2-dep", tagged_dep_file)
     args.add("--abi-out", outputs[module.hash])
@@ -1179,7 +1182,7 @@ def _compile_module(
             name = "{}_{}_ghc.argsfile".format(category_prefix, module_name),
             args = compile_args_for_file,
             allow_args = True,
-        ), prepend="--ghc-argsfile"))
+        ), prepend = "--ghc-argsfile"))
         compile_cmd_args.append(at_argfile(
             actions = actions,
             name = "{}_{}.argsfile".format(category_prefix, module_name),
@@ -1360,7 +1363,7 @@ def compile_args(
 
     for lg in link_group_libs:
         compile_args.add(cmd_args(lg.db, prepend = "-package-db"))
-        compile_args.add(cmd_args(lg.pkgname, prepend = "-package", hidden=[lg.lib]))
+        compile_args.add(cmd_args(lg.pkgname, prepend = "-package", hidden = [lg.lib]))
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
@@ -1405,9 +1408,7 @@ def _make_module_tsets_non_incr(
         toolchain_deps_by_name: dict[str, None],
         direct_deps_by_name: dict[str, typing.Any],
         name,
-        pkgname,
-        ) -> CompiledModuleTSet:
-
+        pkgname) -> CompiledModuleTSet:
     toolchain_deps = []
     library_deps = []
 
@@ -1425,7 +1426,7 @@ def _make_module_tsets_non_incr(
         else:
             fail("Unknown library dependency '{}'. Add the library to the `deps` attribute".format(dep_pkgname))
 
-   # Transitive module dependencies from other packages.
+    # Transitive module dependencies from other packages.
     cross_package_modules = actions.tset(
         CompiledModuleTSet,
         children = exposed_package_modules,
@@ -1618,7 +1619,15 @@ def compile(
         is_haskell_binary: bool = False) -> CompileResultInfo:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
-    modules = _modules_by_name(ctx, sources = ctx.attrs.srcs, link_style = link_style, enable_profiling = enable_profiling, suffix = artifact_suffix, module_prefix = ctx.attrs.module_prefix, is_haskell_binary = is_haskell_binary)
+    modules = _modules_by_name(
+        ctx,
+        sources = ctx.attrs.srcs,
+        link_style = link_style,
+        enable_profiling = enable_profiling,
+        suffix = artifact_suffix,
+        module_prefix = ctx.attrs.module_prefix,
+        is_haskell_binary = is_haskell_binary,
+    )
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
 
     interfaces = [interface for module in modules.values() for interface in module.interfaces]
