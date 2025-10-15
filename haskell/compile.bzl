@@ -143,7 +143,36 @@ _Module = record(
     prefix_dir = field(str),
 )
 
-def _strip_prefix(prefix, s):
+_DynamicDoCompileOptions = record(
+    artifact_suffix = str,
+    compiler_flags = list[typing.Any],  # Arguments.
+    ghc_rts_flags = list[typing.Any],  # Arguments.
+    deps = list[Dependency],
+    direct_deps_info = list[HaskellLibraryInfoTSet],
+    direct_deps_link_info = list[HaskellLinkInfo],
+    haskell_direct_deps_lib_infos = list[HaskellLibraryInfo],
+    enable_haddock = bool,
+    enable_profiling = bool,
+    external_tool_paths = list[RunInfo],
+    ghc_wrapper = RunInfo,
+    haskell_toolchain = HaskellToolchainInfo,
+    label = Label,
+    link_style = LinkStyle,
+    main = str | None,
+    md_file = Artifact,
+    modules = dict[str, _Module],
+    pkgname = str,
+    sources = list[typing.Any],  # Source.
+    sources_deps = dict[typing.Any, list[typing.Any]],  # Source -> list[Source].
+    srcs_envs = dict[typing.Any, dict[str, typing.Any]],  # Source -> (str -> Argument).
+    toolchain_deps_by_name = dict[str, None],
+    extra_libraries = list[Dependency],
+    worker = WorkerInfo | None,
+    allow_worker = bool,
+    link_group_libs = list[HaskellLinkGroupInfo],
+)
+
+def _strip_prefix(prefix: str, s: str) -> str:
     stripped = strip_prefix(prefix, s)
 
     return stripped if stripped != None else s
@@ -681,13 +710,13 @@ def add_worker_args(
     command.add("--worker-target-id", "singleton" if haskell_toolchain.worker_make else to_hash(pkgname))
 
 def make_package_env(
-        actions,
-        haskell_toolchain,
-        label,
-        link_style,
-        enable_profiling,
-        allow_worker,
-        packagedb_args) -> Artifact:
+        actions: AnalysisActions,
+        haskell_toolchain: HaskellToolchainInfo,
+        label: Label,
+        link_style: LinkStyle,
+        enable_profiling: bool,
+        allow_worker: bool,
+        packagedb_args: cmd_args) -> Artifact:
     # TODO[AH] Avoid duplicates and share identical env files.
     #   The set of package-dbs can be known at the package level, not just the
     #   module level. So, we could generate this file outside of the
@@ -735,10 +764,17 @@ def _common_compile_wrapper_args(
 
     return args
 
+# This _should_ be `tuple[Artifact, ResolvedDynamicValue]`, but:
+#     error: `tuple[]` is implemented only for `tuple[T, ...]`
+#
+# This _could_ be `tuple[Artifact | ResolvedDynamicValue, ...]` but
+# `buildifier` hard-errors when `...` is used.
+_DirectDep = typing.Any
+
 def _common_compile_module_args(
         actions: AnalysisActions,
         *,
-        arg: struct,
+        arg: _DynamicDoCompileOptions,
         compiler_flags: list[ArgLike],
         ghc_rts_flags: list[ArgLike],
         incremental: bool,
@@ -756,8 +792,8 @@ def _common_compile_module_args(
         sources: list[Artifact],
         direct_deps_info: list[HaskellLibraryInfoTSet],
         allow_worker: bool,
-        toolchain_deps_by_name,
-        direct_deps_by_name,
+        toolchain_deps_by_name: dict[str, None],
+        direct_deps_by_name: dict[str, _DirectDep],
         pkgname: str) -> CommonCompileModuleArgs:
     use_worker = allow_worker and haskell_toolchain.use_worker
     worker_make = use_worker and haskell_toolchain.worker_make
@@ -1229,16 +1265,18 @@ def _compile_module(
 
 # Compile incrementally and fill module_tsets accordingly.
 def _compile_incr(
-        actions,
-        module_tsets,
-        arg,
-        common_args,
-        graph,
-        mapped_modules,
-        th_modules,
-        package_deps,
-        direct_deps_by_name,
-        outputs) -> None:
+        actions: AnalysisActions,
+        # Note: `module_tsets` is always empty in practice, but this must
+        # correspond to `DynamicCompileResultInfo.modules`.
+        module_tsets: dict[str, CompiledModuleTSet],
+        arg: _DynamicDoCompileOptions,
+        common_args: CommonCompileModuleArgs,
+        graph: dict[str, list[str]],  # `dict[modname, list[modname]]`
+        mapped_modules: dict[str, _Module],
+        th_modules: list[str],
+        package_deps: dict[str, dict[str, list[str]]],  # `dict[modname, dict[pkgname, list[modname]]`
+        direct_deps_by_name: dict[str, _DirectDep],
+        outputs: dict[Artifact, OutputArtifact]) -> None:
     for module_name in post_order_traversal(graph):
         module = mapped_modules[module_name]
         module_tsets[module_name] = _compile_module(
@@ -1267,19 +1305,19 @@ def _compile_incr(
         )
 
 def compile_args(
-        actions,
-        haskell_toolchain,
-        md_file,
-        compiler_flags,
-        main,
-        deps,
-        sources,
-        external_tool_paths,
+        actions: AnalysisActions,
+        haskell_toolchain: HaskellToolchainInfo,
+        md_file: Artifact,
+        compiler_flags: list[typing.Any],  # Arguments.
+        main: str | None,
+        deps: list[Dependency],
+        sources: list[typing.Any],  # Source.
+        external_tool_paths: list[RunInfo],
         link_style: LinkStyle,
         enable_profiling: bool,
-        direct_deps_link_info,
-        haskell_direct_deps_lib_infos,
-        extra_libraries,
+        direct_deps_link_info: list[HaskellLinkInfo],
+        haskell_direct_deps_lib_infos: list[HaskellLibraryInfo],
+        extra_libraries: list[Dependency],
         package_env_args: cmd_args,
         target_deps_args: cmd_args,
         link_group_libs: list[HaskellLinkGroupInfo],
@@ -1407,8 +1445,8 @@ def _make_module_tsets_non_incr(
         package_deps: dict[str, list[str]],
         toolchain_deps_by_name: dict[str, None],
         direct_deps_by_name: dict[str, typing.Any],
-        name,
-        pkgname) -> CompiledModuleTSet:
+        name: str,
+        pkgname: str) -> CompiledModuleTSet:
     toolchain_deps = []
     library_deps = []
 
@@ -1448,16 +1486,18 @@ def _make_module_tsets_non_incr(
 
 # Compile in one step all the context's sources
 def _compile_non_incr(
-        actions,
-        module_tsets,
-        arg,
-        common_args,
-        graph,
-        mapped_modules,
-        th_modules,
-        package_deps,
-        direct_deps_by_name,
-        outputs) -> None:
+        actions: AnalysisActions,
+        # Note: `module_tsets` is always empty in practice, but this must
+        # correspond to `DynamicCompileResultInfo.modules`.
+        module_tsets: dict[str, CompiledModuleTSet],
+        arg: _DynamicDoCompileOptions,
+        common_args: CommonCompileModuleArgs,
+        graph: dict[str, list[str]],  # `dict[modname, list[modname]]`
+        mapped_modules: dict[str, _Module],
+        th_modules: list[str],
+        package_deps: dict[str, dict[str, list[str]]],  # `dict[modname, dict[pkgname, list[modname]]`
+        direct_deps_by_name: dict[str, _DirectDep],
+        outputs: dict[Artifact, OutputArtifact]) -> None:
     haskell_toolchain = arg.haskell_toolchain
     link_style = arg.link_style
     enable_profiling = arg.enable_profiling
@@ -1530,7 +1570,14 @@ def _compile_non_incr(
         # no_outputs_cleanup = True,
     )
 
-def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direct_deps_by_name, outputs):
+def _dynamic_do_compile_impl(
+        actions: AnalysisActions,
+        incremental: bool,
+        md_file: ArtifactValue,
+        arg: _DynamicDoCompileOptions,
+        pkg_deps: ResolvedDynamicValue | None,
+        outputs: dict[Artifact, OutputArtifact],
+        direct_deps_by_name: dict[str, _DirectDep]) -> list[Provider]:
     common_args = _common_compile_module_args(
         actions,
         arg = arg,
@@ -1556,6 +1603,7 @@ def _dynamic_do_compile_impl(actions, incremental, md_file, pkg_deps, arg, direc
         pkgname = arg.pkgname,
     )
 
+    # See `./tools/generate_target_metadata.py` for schema information.
     md = md_file.read_json()
     th_modules = md["th_modules"]
     module_map = md["module_mapping"]
@@ -1599,7 +1647,7 @@ _dynamic_do_compile = dynamic_actions(
     attrs = {
         "incremental": dynattrs.value(bool),
         "md_file": dynattrs.artifact_value(),
-        "arg": dynattrs.value(typing.Any),
+        "arg": dynattrs.value(_DynamicDoCompileOptions),
         "pkg_deps": dynattrs.option(dynattrs.dynamic_value()),
         "outputs": dynattrs.dict(Artifact, dynattrs.output()),
         "direct_deps_by_name": dynattrs.dict(str, dynattrs.tuple(dynattrs.value(Artifact), dynattrs.dynamic_value())),
@@ -1670,7 +1718,7 @@ def compile(
             info.value.name: (info.value.empty_db, info.value.dynamic[enable_profiling])
             for info in direct_deps_info
         },
-        arg = struct(
+        arg = _DynamicDoCompileOptions(
             artifact_suffix = artifact_suffix,
             compiler_flags = ctx.attrs.compiler_flags,
             ghc_rts_flags = ctx.attrs.ghc_rts_flags,
