@@ -7,7 +7,6 @@
 
 # Implementation of the Haskell build rules.
 
-load("@prelude//utils:arglike.bzl", "ArgLike")
 load("@prelude//:paths.bzl", "paths")
 load("@prelude//cxx:archive.bzl", "make_archive")
 load(
@@ -78,31 +77,31 @@ load(
 )
 load(
     "@prelude//haskell:toolchain.bzl",
-    "HaskellToolchainInfo",
-    "HaskellToolchainLibrary",
+    "DynamicHaskellPackageDbInfo",
     "DynamicHaskellToolchainLibraryInfo",
     "HaskellPackageDbTSet",
-    "DynamicHaskellPackageDbInfo",
+    "HaskellToolchainInfo",
+    "HaskellToolchainLibrary",
     "NativeToolchainLibrary",
 )
 load(
     "@prelude//haskell:util.bzl",
     "attr_deps",
-    "attr_deps_haskell_link_group_infos",
-    "attr_deps_haskell_link_infos_sans_template_deps",
     "attr_deps_haskell_lib_infos",
+    "attr_deps_haskell_link_group_infos",
     "attr_deps_haskell_link_infos",
+    "attr_deps_haskell_link_infos_sans_template_deps",
     "attr_deps_haskell_toolchain_libraries",
     "attr_deps_merged_link_infos",
     "attr_deps_profiling_link_infos",
     "attr_deps_shared_library_infos",
     "error_on_non_haskell_srcs",
     "get_artifact_suffix",
+    "get_source_prefixes",
     "is_haskell_boot",
     "is_haskell_src",
     "output_extensions",
     "src_to_module_name",
-    "get_source_prefixes",
     "srcs_to_pairs",
     "to_hash",
 )
@@ -158,6 +157,7 @@ load(
     "PythonLibraryInfo",
 )
 load("@prelude//utils:argfile.bzl", "at_argfile")
+load("@prelude//utils:arglike.bzl", "ArgLike")
 load("@prelude//utils:set.bzl", "set")
 load("@prelude//utils:utils.bzl", "filter_and_map_idx", "flatten")
 
@@ -186,12 +186,12 @@ def _attr_preferred_linkage(ctx: AnalysisContext) -> Linkage:
 # --
 
 def _toolchain_target_metadata_impl(
-    actions,
-    haskell_toolchain,
-    output,
-    libname,
-    pkg_deps,
-    md_gen) -> list[Provider]:
+        actions,
+        haskell_toolchain,
+        output,
+        libname,
+        pkg_deps,
+        md_gen) -> list[Provider]:
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
     md_args = cmd_args(md_gen, "--ghc-pkg", haskell_toolchain.packager, "--package-name", libname, "--output", output)
@@ -202,7 +202,7 @@ def _toolchain_target_metadata_impl(
     actions.run(
         md_args,
         category = "haskell_toolchain_library_metadata",
-        identifier = libname
+        identifier = libname,
     )
 
     return []
@@ -218,14 +218,12 @@ _toolchain_target_metadata = dynamic_actions(
     },
 )
 
-
 def _get_toolchain_haskell_package_id_impl(
-    actions,
-    md_file: ArtifactValue) -> list[Provider]:
-    md  = md_file.read_json()
+        actions,
+        md_file: ArtifactValue) -> list[Provider]:
+    md = md_file.read_json()
     package_id = md["id"]
     return [DynamicHaskellToolchainLibraryInfo(id = package_id)]
-
 
 _get_toolchain_haskell_package_id = dynamic_actions(
     impl = _get_toolchain_haskell_package_id_impl,
@@ -234,29 +232,29 @@ _get_toolchain_haskell_package_id = dynamic_actions(
     },
 )
 
-
 def haskell_toolchain_library_impl(ctx: AnalysisContext):
     md_file = ctx.actions.declare_output(ctx.label.name + ".md.json")
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
     ctx.actions.dynamic_output_new(
-        _toolchain_target_metadata(haskell_toolchain=haskell_toolchain,
-                                   output=md_file.as_output(),
-                                   libname=ctx.attrs.name,
-                                   pkg_deps=pkg_deps,
-                                   md_gen=ctx.attrs._generate_toolchain_lib_metadata[RunInfo],
-                                   )
+        _toolchain_target_metadata(
+            haskell_toolchain = haskell_toolchain,
+            output = md_file.as_output(),
+            libname = ctx.attrs.name,
+            pkg_deps = pkg_deps,
+            md_gen = ctx.attrs._generate_toolchain_lib_metadata[RunInfo],
+        ),
     )
     dynamic = ctx.actions.dynamic_output_new(
-        _get_toolchain_haskell_package_id(md_file=md_file),
+        _get_toolchain_haskell_package_id(md_file = md_file),
     )
-    sub_targets = { "metadata": [DefaultInfo(default_output = md_file)] }
+    sub_targets = {"metadata": [DefaultInfo(default_output = md_file)]}
     return [
         DefaultInfo(sub_targets = sub_targets),
         HaskellToolchainLibrary(
             name = ctx.attrs.name,
             dynamic = dynamic,
-        )
+        ),
     ]
 
 # --
@@ -483,16 +481,14 @@ def haskell_prebuilt_library_impl(ctx: AnalysisContext) -> list[Provider]:
     ]
 
 def _register_package_conf(
-    actions,
-    pkg_conf,
-    db,
-    registerer,
-    packager,
-    category_prefix,
-    artifact_suffix,
-    use_empty_lib,
-    ):
-
+        actions,
+        pkg_conf,
+        db,
+        registerer,
+        packager,
+        category_prefix,
+        artifact_suffix,
+        use_empty_lib):
     register_cmd = cmd_args(registerer)
     register_cmd.add("--ghc-pkg", packager)
     register_cmd.add("--output", db)
@@ -512,16 +508,14 @@ def _mk_artifact_dir(dir_prefix: str, profiled: bool, link_style, subdir: str = 
         suffix = paths.join(suffix, subdir)
     return "\"${pkgroot}/" + dir_prefix + "-" + suffix + "\""
 
-
 def _write_package_conf_impl(
-    actions,
-    md_file,
-    toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
-    pkg_conf,
-    db,
-    libname,
-    arg,
-    ) -> list[Provider]:
+        actions,
+        md_file,
+        toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
+        pkg_conf,
+        db,
+        libname,
+        arg) -> list[Provider]:
     md = md_file.read_json()
     module_map = md["module_mapping"]
 
@@ -541,11 +535,14 @@ def _write_package_conf_impl(
         import_dirs = ["."]
     elif not source_prefixes_excluded:
         import_dirs = [
-            _mk_artifact_dir("mod", profiled, arg.link_style) for profiled in arg.profiling
+            _mk_artifact_dir("mod", profiled, arg.link_style)
+            for profiled in arg.profiling
         ]
     else:
         import_dirs = [
-            _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix) for profiled in arg.profiling for src_prefix in source_prefixes_excluded
+            _mk_artifact_dir("mod", profiled, arg.link_style, src_prefix)
+            for profiled in arg.profiling
+            for src_prefix in source_prefixes_excluded
         ]
 
     toolchain_lib_ids = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
@@ -596,7 +593,6 @@ def _write_package_conf_impl(
     )
 
     return []
-
 
 _write_package_conf = dynamic_actions(
     impl = _write_package_conf_impl,
@@ -686,7 +682,7 @@ def _make_package(
             db = db.as_output(),
             libname = libname,
             arg = arg,
-        )
+        ),
     )
 
     return db
@@ -715,7 +711,7 @@ def _get_haskell_shared_library_name_linker_flags(
 
 def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     # link group
-    all_link_group_ids = [ l.id for lg in arg.link_group_libs for l in lg.libraries ]
+    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
 
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
@@ -723,15 +719,15 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
     all_deps = libs.reduce("packages")
     package_db_tset = actions.tset(
         HaskellPackageDbTSet,
-        children = [package_db[name] for name in (arg.toolchain_libs + all_deps) if name in package_db]
+        children = [package_db[name] for name in (arg.toolchain_libs + all_deps) if name in package_db],
     )
 
     packagedb_args = cmd_args()
     for d in list(libs.traverse()):
         if d.name in all_link_group_ids:
-             packagedb_args.add(cmd_args(d.empty_db))
+            packagedb_args.add(cmd_args(d.empty_db))
         else:
-             packagedb_args.add(cmd_args(d.db))
+            packagedb_args.add(cmd_args(d.db))
     for lg in arg.link_group_libs:
         packagedb_args.add(cmd_args(lg.db))
 
@@ -752,7 +748,7 @@ def _dynamic_link_shared_impl(actions, pkg_deps, lib, arg):
         if not item.id in all_link_group_ids:
             link_args.add(cmd_args(item.name, prepend = "-package"))
 
-    link_args.add(cmd_args(package_db_tset.project_as_args("package_db"), prepend="-package-db"))
+    link_args.add(cmd_args(package_db_tset.project_as_args("package_db"), prepend = "-package-db"))
 
     # link group
     for lg in arg.link_group_libs:
@@ -903,7 +899,6 @@ def _build_haskell_lib(
                 artifact_suffix = artifact_suffix,
                 haskell_toolchain = haskell_toolchain,
                 infos = infos,
-
                 haskell_direct_deps_lib_infos = haskell_direct_deps_lib_infos,
                 direct_deps_info = direct_deps_info,
                 lib = lib,
@@ -922,9 +917,7 @@ def _build_haskell_lib(
             ),
         ))
 
-
         if worker != None and allow_worker and haskell_toolchain.use_worker and not haskell_toolchain.worker_make:
-
             dummy = ctx.actions.declare_output("{}.metadata".format(lib_short_path))
 
             worker_close_cmd = cmd_args(ctx.attrs._ghc_wrapper[RunInfo])
@@ -932,8 +925,8 @@ def _build_haskell_lib(
             worker_close_cmd.add("--worker-target-id", to_hash(pkgname))
             worker_close_cmd.add("--close-input", lib)
             for hli in hlis:
-              for e in hli.extra[link_style]:
-                worker_close_cmd.add("--close-input", e)
+                for e in hli.extra[link_style]:
+                    worker_close_cmd.add("--close-input", e)
 
             worker_close_cmd.add("--close-output", dummy.as_output())
             worker_close_cmd.add("--buck2-dep", "dummy")
@@ -942,7 +935,7 @@ def _build_haskell_lib(
             worker_close_cmd.add("--ghc", haskell_toolchain.compiler)
 
             worker_args = dict(exe = WorkerRunInfo(worker = worker))
-            ctx.actions.run(worker_close_cmd, category="worker_close", **worker_args)
+            ctx.actions.run(worker_close_cmd, category = "worker_close", **worker_args)
             extra = [dummy]
         else:
             extra = []
@@ -956,7 +949,7 @@ def _build_haskell_lib(
     else:  # static flavours
         # TODO: avoid making an archive for a single object, like cxx does
         # (but would that work with Template Haskell?)
-        objs = [ o for o in compiled.objects if o.extension != ".dyn_o" ]
+        objs = [o for o in compiled.objects if o.extension != ".dyn_o"]
         archive = make_archive(ctx, lib_short_path, objs)
         lib = archive.artifact
         libs = [lib] + archive.external_objects
@@ -1048,7 +1041,6 @@ def _build_haskell_lib(
         for_deps = True,
     )
 
-
     hlib = HaskellLibraryInfo(
         name = pkgname,
         db = db,
@@ -1109,8 +1101,9 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
         pkgname = libname
     else:
         libprefix = repr(ctx.label.path).replace("//", "_").replace("/", "_")
+
         # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
-        if libprefix[-1] == '_':
+        if libprefix[-1] == "_":
             libname0 = libprefix + ctx.label.name
         else:
             libname0 = libprefix + "_" + ctx.label.name
@@ -1299,8 +1292,9 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
             haskell_toolchain.haddock,
             "--gen-index",
             "--optghc=-package-env=-",
-            "-o", cmd_args(styles[0].as_output(), parent=1),
-            hidden=[file.as_output() for file in styles]
+            "-o",
+            cmd_args(styles[0].as_output(), parent = 1),
+            hidden = [file.as_output() for file in styles],
         ),
         category = "haddock_styles",
     )
@@ -1308,10 +1302,10 @@ def haskell_library_impl(ctx: AnalysisContext) -> list[Provider]:
         "haddock": [DefaultInfo(
             default_outputs = haddock.html.values(),
             sub_targets = {
-                module: [DefaultInfo(default_output = html, other_outputs=styles)]
+                module: [DefaultInfo(default_output = html, other_outputs = styles)]
                 for module, html in haddock.html.items()
-            }
-        )]
+            },
+        )],
     })
 
     providers = [
@@ -1435,14 +1429,14 @@ def _make_link_package(
     return db
 
 def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
-    link_args = arg.link.copy() # link is already frozen, make a copy
+    link_args = arg.link.copy()  # link is already frozen, make a copy
     link_cmd_hidden = []
 
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
     link_args.add("-hide-all-packages")
 
-    all_link_group_ids = [ l.id for lg in arg.link_group_libs for l in lg.libraries ]
+    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
 
     libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
 
@@ -1450,16 +1444,16 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
 
     toolchain_package_db_tset = actions.tset(
         HaskellPackageDbTSet,
-        children = [package_db[name] for name in all_toolchain_libs if name in package_db]
+        children = [package_db[name] for name in all_toolchain_libs if name in package_db],
     )
 
     packagedb_args = cmd_args()
 
     for d in list(libs.traverse()):
         if d.name in all_link_group_ids:
-             packagedb_args.add(cmd_args(d.empty_db))
+            packagedb_args.add(cmd_args(d.empty_db))
         else:
-             packagedb_args.add(cmd_args(d.db))
+            packagedb_args.add(cmd_args(d.db))
     for lg in arg.link_group_libs:
         packagedb_args.add(cmd_args(lg.db))
     packagedb_args.add(toolchain_package_db_tset.project_as_args("package_db"))
@@ -1471,6 +1465,7 @@ def _dynamic_link_binary_impl(actions, pkg_deps, output, arg):
         if not item.id in all_link_group_ids:
             link_args.add(cmd_args(item.name, prepend = "-package"))
             link_cmd_hidden.append(item.libs)
+
     # link group
     for lg in arg.link_group_libs:
         link_args.add("-package", lg.pkgname)
@@ -1834,7 +1829,6 @@ def _haskell_module_sub_targets(*, compiled, link_style, enable_profiling):
         })],
     }
 
-
 #
 def _make_link_group_package(
         actions: AnalysisActions,
@@ -1851,8 +1845,8 @@ def _make_link_group_package(
     artifact_suffix = get_artifact_suffix(link_style, False)
 
     toolchain_deps = [info.providers[DynamicHaskellToolchainLibraryInfo].id for info in toolchain_lib_dyn_infos]
-    direct_deps = [ lib.name for lib in hlibs ]
-    indirect_deps = [ n for n in project_deps if n not in direct_deps ]
+    direct_deps = [lib.name for lib in hlibs]
+    indirect_deps = [n for n in project_deps if n not in direct_deps]
     all_deps = indirect_deps + toolchain_deps
 
     conf = cmd_args(
@@ -1889,7 +1883,6 @@ def _make_link_group_package(
 
 # Implement dynamic library linking for a link group
 def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_infos, pkg_deps):
-
     link_cmd_args = [arg.haskell_toolchain.linker]
     link_cmd_hidden = []
     link_args = cmd_args()
@@ -1900,7 +1893,7 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
 
     package_db_tset = actions.tset(
         HaskellPackageDbTSet,
-        children = [package_db[name] for name in toolchain_deps if name in package_db]
+        children = [package_db[name] for name in toolchain_deps if name in package_db],
     )
     packagedb_args = cmd_args()
     packagedb_args.add(package_db_tset.project_as_args("package_db"))
@@ -1921,7 +1914,6 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
     for d in indirect_deps:
         link_args.add(cmd_args(d.name, prepend = "-package"))
         link_cmd_hidden.append(d.libs)
-
 
     # adding toolchain dep packages
     link_args.add(cmd_args(toolchain_deps, prepend = "-package"))
@@ -1956,7 +1948,7 @@ def _dynamic_link_group_shared_impl(actions, lib, db, arg, toolchain_lib_dyn_inf
 
     actions.run(
         link_cmd,
-        category  = "haskell_link_group_shared",
+        category = "haskell_link_group_shared",
         identifier = arg.libname,
         allow_cache_upload = True,
     )
@@ -1992,23 +1984,23 @@ _dynamic_link_group_shared = dynamic_actions(
 # Link group creates a virtual package with only shared and static library artifacts
 # This saves linking time.
 def make_haskell_link_group(
-    actions,
-    label,
-    hlibs,
-    direct_deps_info,
-    link_style,
-    enable_profiling,
-    registerer,
-    haskell_toolchain,
-    linker_info) -> list[Provider]:
-
+        actions,
+        label,
+        hlibs,
+        direct_deps_info,
+        link_style,
+        enable_profiling,
+        registerer,
+        haskell_toolchain,
+        linker_info) -> list[Provider]:
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
     static_lib_suffix = "_p.a" if enable_profiling else ".a"
 
     libprefix = repr(label.path).replace("//", "_").replace("/", "_")
+
     # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
-    if libprefix[-1] == '_':
+    if libprefix[-1] == "_":
         libname0 = libprefix + label.name
     else:
         libname0 = libprefix + "_" + label.name
@@ -2032,16 +2024,16 @@ def make_haskell_link_group(
     )
 
     toolchain_deps = libs_tset.reduce("toolchain_packages")
-    toolchain_deps_name = [ d.name for d in toolchain_deps ]
+    toolchain_deps_name = [d.name for d in toolchain_deps]
     toolchain_lib_dyn_infos = [dep.dynamic for dep in toolchain_deps]
 
     all_deps = libs_tset.reduce("packages")
-    project_deps = [ d for d in all_deps if d not in toolchain_deps_name ]
+    project_deps = [d for d in all_deps if d not in toolchain_deps_name]
 
     pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
 
     # collect all the extra library dependencies from component Haskell libraries
-    direct_extra_libs = [ elib for lib in hlibs for elib in lib.extra_libraries]
+    direct_extra_libs = [elib for lib in hlibs for elib in lib.extra_libraries]
 
     actions.dynamic_output_new(_dynamic_link_group_shared(
         lib = lib.as_output(),
@@ -2083,7 +2075,7 @@ def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
 
     hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in ctx.attrs.deps]
-    direct_deps_info = [ lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx) ]
+    direct_deps_info = [lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx)]
 
     results = make_haskell_link_group(
         ctx.actions,
