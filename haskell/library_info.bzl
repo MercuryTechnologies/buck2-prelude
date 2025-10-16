@@ -5,12 +5,12 @@
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
 # of this source tree.
 
-load("@prelude//utils:utils.bzl", "flatten", "dedupe_by_value")
 load(
     "@prelude//haskell:toolchain.bzl",
     "HaskellToolchainLibrary",
     "NativeToolchainLibrary",
 )
+load("@prelude//utils:utils.bzl", "dedupe_by_value", "flatten")
 
 # If the target is a haskell library, the HaskellLibraryProvider
 # contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
@@ -66,13 +66,13 @@ HaskellLibraryInfo = record(
 )
 
 def _project_as_package_db(lib: HaskellLibraryInfo):
-  return cmd_args(lib.db)
+    return cmd_args(lib.db)
 
 def _project_as_empty_package_db(lib: HaskellLibraryInfo):
-  return cmd_args(lib.empty_db)
+    return cmd_args(lib.empty_db)
 
 def _project_as_deps_package_db(lib: HaskellLibraryInfo):
-  return cmd_args(lib.deps_db)
+    return cmd_args(lib.deps_db)
 
 def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None):
     flatted = flatten(children)
