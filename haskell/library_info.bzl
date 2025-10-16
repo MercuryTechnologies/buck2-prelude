@@ -10,19 +10,11 @@ load(
     "HaskellToolchainLibrary",
     "NativeToolchainLibrary",
 )
-load("@prelude//utils:utils.bzl", "dedupe_by_value", "flatten")
-
-# If the target is a haskell library, the HaskellLibraryProvider
-# contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
-# which contains the HaskellLibraryInfo for all the transitive
-# dependencies). Direct dependencies are treated differently from
-# indirect dependencies for the purposes of module visibility.
-HaskellLibraryProvider = provider(
-    fields = {
-        "lib": provider_field(typing.Any, default = None),  # dict[LinkStyle, HaskellLibraryInfo]
-        "prof_lib": provider_field(typing.Any, default = None),  # dict[LinkStyle, HaskellLibraryInfo]
-    },
+load(
+    "@prelude//linking:link_info.bzl",
+    "LinkStyle",
 )
+load("@prelude//utils:utils.bzl", "dedupe_by_value", "flatten")
 
 # A record of a Haskell library.
 HaskellLibraryInfo = record(
@@ -65,22 +57,36 @@ HaskellLibraryInfo = record(
     md_file = Artifact | None,
 )
 
-def _project_as_package_db(lib: HaskellLibraryInfo):
+# If the target is a haskell library, the HaskellLibraryProvider
+# contains its HaskellLibraryInfo. (in contrast to a HaskellLinkInfo,
+# which contains the HaskellLibraryInfo for all the transitive
+# dependencies). Direct dependencies are treated differently from
+# indirect dependencies for the purposes of module visibility.
+HaskellLibraryProvider = provider(
+    fields = {
+        "lib": provider_field(dict[LinkStyle, HaskellLibraryInfo] | None, default = None),
+        "prof_lib": provider_field(dict[LinkStyle, HaskellLibraryInfo] | None, default = None),
+    },
+)
+
+def _project_as_package_db(lib: HaskellLibraryInfo) -> cmd_args:
     return cmd_args(lib.db)
 
-def _project_as_empty_package_db(lib: HaskellLibraryInfo):
+def _project_as_empty_package_db(lib: HaskellLibraryInfo) -> cmd_args:
     return cmd_args(lib.empty_db)
 
-def _project_as_deps_package_db(lib: HaskellLibraryInfo):
+def _project_as_deps_package_db(lib: HaskellLibraryInfo) -> cmd_args:
     return cmd_args(lib.deps_db)
 
-def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None):
+def _get_package_deps(children: list[list[str]], lib: HaskellLibraryInfo | None) -> list[str]:
     flatted = flatten(children)
     if lib:
         flatted.extend(lib.dependencies)
     return dedupe_by_value(flatted)
 
-def _get_package_toolchain_deps(children: list[list[HaskellToolchainLibrary]], lib: HaskellLibraryInfo | None):
+def _get_package_toolchain_deps(
+        children: list[list[HaskellToolchainLibrary]],
+        lib: HaskellLibraryInfo | None) -> list[HaskellToolchainLibrary]:
     flatted = flatten(children)
     if lib:
         flatted.extend(lib.toolchain_dependencies)
