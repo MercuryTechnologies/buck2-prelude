@@ -2071,13 +2071,26 @@ _dynamic_link_group_shared = dynamic_actions(
 def make_haskell_link_group(
         actions: AnalysisActions,
         label: Label,
-        hlibs: list[HaskellLibraryInfo],
-        direct_deps_info: list[HaskellLibraryInfoTSet],
-        link_style: LinkStyle,
-        enable_profiling: bool,
+        deps: list[Dependency],
         registerer: RunInfo,
         haskell_toolchain: HaskellToolchainInfo,
         linker_info: LinkerInfo) -> list[Provider]:
+    # for now
+    link_style = LinkStyle("shared")
+    enable_profiling = False
+
+    hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in deps]
+    direct_deps_info = [
+        x.info[link_style]
+        for x in dedupe(filter(
+            None,
+            [
+                d.get(HaskellLinkInfo)
+                for d in deps
+            ],
+        ))
+    ]
+
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
     dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
     static_lib_suffix = "_p.a" if enable_profiling else ".a"
@@ -2151,24 +2164,14 @@ def make_haskell_link_group(
     ]
 
 def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
-    # for now
-    link_style = LinkStyle("shared")
-    enable_profiling = False
-
     registerer = ctx.attrs._ghc_pkg_registerer[RunInfo]
     haskell_toolchain = ctx.attrs._haskell_toolchain[HaskellToolchainInfo]
     linker_info = ctx.attrs._cxx_toolchain[CxxToolchainInfo].linker_info
 
-    hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in ctx.attrs.deps]
-    direct_deps_info = [lib.info[link_style] for lib in attr_deps_haskell_link_infos(ctx)]
-
     results = make_haskell_link_group(
         ctx.actions,
         ctx.label,
-        hlibs,
-        direct_deps_info,
-        link_style,
-        enable_profiling,
+        ctx.attrs.deps,
         registerer,
         haskell_toolchain,
         linker_info,
