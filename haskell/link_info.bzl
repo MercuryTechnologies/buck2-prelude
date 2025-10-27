@@ -41,9 +41,9 @@ HaskellProfLinkInfo = provider(
 HaskellLinkGroupInfo = provider(
     fields = {
         "pkgname": provider_field(str),
-        "db": provider_field(Artifact),
-        "lib": provider_field(Artifact),
-        "libraries": provider_field(list[HaskellLibraryInfo]),
+        "db": provider_field(dict[LinkStyle, Artifact]),
+        "lib": provider_field(dict[LinkStyle, Artifact]),
+        "constituents": provider_field(list[HaskellLibraryInfo]),
     },
 )
 

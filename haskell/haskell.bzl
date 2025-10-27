@@ -753,7 +753,7 @@ def _dynamic_link_shared_impl(
         lib: OutputArtifact,
         arg: _DynamicLinkSharedOptions) -> list[Provider]:
     # link group
-    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
+    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.constituents]
 
     package_db = pkg_deps.providers[DynamicHaskellPackageDbInfo].packages
 
@@ -771,7 +771,7 @@ def _dynamic_link_shared_impl(
         else:
             packagedb_args.add(cmd_args(d.db))
     for lg in arg.link_group_libs:
-        packagedb_args.add(cmd_args(lg.db))
+        packagedb_args.add(cmd_args(lg.db[LinkStyle("shared")]))
 
     packagedb_args.add(package_db_tset.project_as_args("package_db"))
 
@@ -795,7 +795,7 @@ def _dynamic_link_shared_impl(
     # link group
     for lg in arg.link_group_libs:
         link_args.add("-package", lg.pkgname)
-        link_cmd_hidden.append(lg.lib)
+        link_cmd_hidden.append(lg.lib[LinkStyle("shared")])
 
     link_args.add(
         get_shared_library_flags(arg.linker_info.type),
@@ -1497,7 +1497,7 @@ def _dynamic_link_binary_impl(
 
     link_args.add("-hide-all-packages")
 
-    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
+    all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.constituents]
 
     libs = actions.tset(HaskellLibraryInfoTSet, children = arg.direct_deps_info)
 
@@ -1516,7 +1516,7 @@ def _dynamic_link_binary_impl(
         else:
             packagedb_args.add(cmd_args(d.db))
     for lg in arg.link_group_libs:
-        packagedb_args.add(cmd_args(lg.db))
+        packagedb_args.add(cmd_args(lg.db[arg.link_style]))
     packagedb_args.add(toolchain_package_db_tset.project_as_args("package_db"))
 
     link_args.add(cmd_args(packagedb_args, prepend = "-package-db"))
@@ -2079,6 +2079,9 @@ def make_haskell_link_group(
     link_style = LinkStyle("shared")
     enable_profiling = False
 
+    all_db = {}
+    all_lib = {}
+
     hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in deps]
     direct_deps_info = [
         x.info[link_style]
@@ -2115,6 +2118,8 @@ def make_haskell_link_group(
     lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
     lib = actions.declare_output(lib_short_path)
     db = actions.declare_output("db-" + artifact_suffix, dir = True)
+    all_db[link_style] = db
+    all_lib[link_style] = lib
 
     libs_tset = actions.tset(
         HaskellLibraryInfoTSet,
@@ -2157,9 +2162,9 @@ def make_haskell_link_group(
         DefaultInfo(default_outputs = [lib]),
         HaskellLinkGroupInfo(
             pkgname = pkgname,
-            db = db,
-            lib = lib,
-            libraries = hlibs,
+            db = all_db,
+            lib = all_lib,
+            constituents = hlibs,
         ),
     ]
 

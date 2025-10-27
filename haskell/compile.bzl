@@ -872,7 +872,7 @@ def _common_compile_module_args(
         if incremental:
             packagedb_args = cmd_args(libs.project_as_args("empty_package_db"))
         else:
-            all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.libraries]
+            all_link_group_ids = [l.id for lg in arg.link_group_libs for l in lg.constituents]
             packagedb_args = cmd_args()
             for d in list(libs.traverse()):
                 if d.name in all_link_group_ids:
@@ -880,7 +880,7 @@ def _common_compile_module_args(
                 else:
                     packagedb_args.add(cmd_args(d.db))
         for lg in arg.link_group_libs:
-            packagedb_args.add(cmd_args(lg.db))
+            packagedb_args.add(cmd_args(lg.db[link_style]))
 
         packagedb_args.add(toolchain_package_db_tset.project_as_args("package_db"))
 
@@ -1400,7 +1400,7 @@ def compile_args(
     # handle link group
 
     for lg in link_group_libs:
-        compile_args.add(cmd_args(lg.db, prepend = "-package-db"))
+        compile_args.add(cmd_args(lg.db[link_style], prepend = "-package-db"))
         compile_args.add(cmd_args(lg.pkgname, prepend = "-package", hidden = [lg.lib]))
 
     # Add args from preprocess-able inputs.
