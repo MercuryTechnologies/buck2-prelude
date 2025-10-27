@@ -1946,7 +1946,8 @@ def _make_link_group_package(
         False,
     )
 
-_DynamicLinkGroupSharedOptions = record(
+# Arg structure for _dynamic_link_group
+_DynamicLinkGroupOptions = record(
     hlibs = list[HaskellLibraryInfo],
     pkgname = str,
     libname = str,
@@ -1958,16 +1959,19 @@ _DynamicLinkGroupSharedOptions = record(
     project_deps = list[str],
     libs_tset = HaskellLibraryInfoTSet,
     extra_libraries = list[NativeToolchainLibrary],
+    link_style = LinkStyle,
+    enable_profiling = bool,
 )
 
-# Implement dynamic library linking for a link group
-def _dynamic_link_group_shared_impl(
-        actions: AnalysisActions,
-        lib: OutputArtifact,
-        db: OutputArtifact,
-        arg: _DynamicLinkGroupSharedOptions,
-        toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
-        pkg_deps: ResolvedDynamicValue | None):
+# Create link group
+def _dynamic_link_group_impl(
+    actions: AnalysisActions,
+    lib: OutputArtifact,
+    db: OutputArtifact,
+    arg: _DynamicLinkGroupOptions,
+    toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
+    pkg_deps: ResolvedDynamicValue | None):
+
     link_cmd_args = [arg.haskell_toolchain.linker]
     link_cmd_hidden = []
     link_args = cmd_args()
@@ -2003,27 +2007,35 @@ def _dynamic_link_group_shared_impl(
     # adding toolchain dep packages
     link_args.add(cmd_args(toolchain_deps, prepend = "-package"))
 
-    for hlib in arg.hlibs:
-        is_profiled = False
-        for o in hlib.objects[is_profiled]:
-            link_args.add(o)
+    if arg.link_style == LinkStyle("shared"):
+         for hlib in arg.hlibs:
+             is_profiled = False
+             for o in hlib.objects[is_profiled]:
+                 link_args.add(o)
+    else:
+        objs = []
+        for hlib in arg.hlibs:
+            is_profiled = False
+            objs += [o for o in hlib.objects[is_profiled] if o.extension != ".dyn_o"]
+        link_args.add(objs)
 
     for l in arg.extra_libraries:
         link_args.add(cmd_args(l.lib_root, l.rel_path_to_root, delimiter = "/", absolute_prefix = "-L"))
         link_args.add(cmd_args(l.name, format = "-l{}"))
 
-    link_args.add(
-        get_shared_library_flags(arg.linker_info.type),
-        "-dynamic",
-        cmd_args(
-            _get_haskell_shared_library_name_linker_flags(arg.linker_info.type, arg.libfile),
-            prepend = "-optl",
-        ),
-    )
+    if arg.link_style== LinkStyle("shared"):
+        link_args.add(
+            get_shared_library_flags(arg.linker_info.type),
+            "-dynamic",
+            cmd_args(
+                _get_haskell_shared_library_name_linker_flags(arg.linker_info.type, arg.libfile),
+                prepend = "-optl",
+            ),
+        )
 
     link_cmd_args.append(at_argfile(
         actions = actions,
-        name = "haskell_link_group_shared.argsfile",
+        name = "haskell_link_group_" + get_artifact_suffix(arg.link_style, arg.enable_profiling) + ".argsfile",
         args = link_args,
         allow_args = True,
     ))
@@ -2033,14 +2045,14 @@ def _dynamic_link_group_shared_impl(
 
     actions.run(
         link_cmd,
-        category = "haskell_link_group_shared",
+        category = "haskell_link_group_" + get_artifact_suffix(arg.link_style, arg.enable_profiling),
         identifier = arg.libname,
         allow_cache_upload = True,
     )
 
     _make_link_group_package(
         actions,
-        LinkStyle("shared"),
+        arg.link_style,
         arg.pkgname,
         arg.libname,
         arg.registerer,
@@ -2054,8 +2066,8 @@ def _dynamic_link_group_shared_impl(
 
     return []
 
-_dynamic_link_group_shared = dynamic_actions(
-    impl = _dynamic_link_group_shared_impl,
+_dynamic_link_group = dynamic_actions(
+    impl = _dynamic_link_group_impl,
     attrs = {
         "lib": dynattrs.output(),
         "db": dynattrs.output(),
@@ -2076,72 +2088,75 @@ def make_haskell_link_group(
         haskell_toolchain: HaskellToolchainInfo,
         linker_info: LinkerInfo) -> list[Provider]:
     # for now
-    link_style = LinkStyle("shared")
+    preferred_linkage = Linkage("shared")
     enable_profiling = False
 
     all_db = {}
     all_lib = {}
 
-    hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in deps]
-    direct_deps_info = [
-        x.info[link_style]
-        for x in dedupe(filter(
-            None,
-            [
-                d.get(HaskellLinkInfo)
-                for d in deps
-            ],
-        ))
-    ]
+    for output_style in get_output_styles_for_linkage(preferred_linkage):
+        link_style = legacy_output_style_to_link_style(output_style)
+        if link_style == LinkStyle("shared") and enable_profiling:
+            # Not yet supported.
+            continue
 
-    artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
-    dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
-    static_lib_suffix = "_p.a" if enable_profiling else ".a"
+        hlibs = [l.get(HaskellLibraryProvider).lib[link_style] for l in deps]
+        direct_deps_info = [
+            x.info[link_style]
+            for x in dedupe(filter(
+                None,
+                [
+                    d.get(HaskellLinkInfo)
+                    for d in deps
+                ],
+            ))
+        ]
 
-    libprefix = repr(label.path).replace("//", "_").replace("/", "_")
+        artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
+        dynamic_lib_suffix = "." + LINKERS[linker_info.type].default_shared_library_extension
+        static_lib_suffix = "_p.a" if enable_profiling else ".a"
 
-    # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
-    if libprefix[-1] == "_":
-        libname0 = libprefix + label.name
-    else:
-        libname0 = libprefix + "_" + label.name
-    pkgname = libname0.replace("_", "-")
-    libname = "HS" + pkgname
+        libprefix = repr(label.path).replace("//", "_").replace("/", "_")
 
-    libstem = libname
-    if link_style == LinkStyle("shared"):
-        compiler_suffix = "-ghc{}".format(haskell_toolchain.compiler_major_version)
-    else:
-        compiler_suffix = ""
-    libfile = "lib" + libstem + compiler_suffix + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
+        # avoid consecutive "--" in package name, which is not allowed by ghc-pkg.
+        if libprefix[-1] == "_":
+            libname0 = libprefix + label.name
+        else:
+            libname0 = libprefix + "_" + label.name
+        pkgname = libname0.replace("_", "-")
+        libname = "HS" + pkgname
 
-    lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
-    lib = actions.declare_output(lib_short_path)
-    db = actions.declare_output("db-" + artifact_suffix, dir = True)
-    all_db[link_style] = db
-    all_lib[link_style] = lib
+        libstem = libname
+        if link_style == LinkStyle("shared"):
+            compiler_suffix = "-ghc{}".format(haskell_toolchain.compiler_major_version)
+        else:
+            compiler_suffix = ""
+        libfile = "lib" + libstem + compiler_suffix + (dynamic_lib_suffix if link_style == LinkStyle("shared") else static_lib_suffix)
 
-    libs_tset = actions.tset(
-        HaskellLibraryInfoTSet,
-        children = direct_deps_info,
-    )
+        lib_short_path = paths.join("lib-{}".format(artifact_suffix), libfile)
+        lib = actions.declare_output(lib_short_path)
+        db = actions.declare_output("db-" + artifact_suffix, dir = True)
+        all_db[link_style] = db
+        all_lib[link_style] = lib
+ 
+        libs_tset = actions.tset(
+            HaskellLibraryInfoTSet,
+            children = direct_deps_info,
+        )
 
-    toolchain_deps = libs_tset.reduce("toolchain_packages")
-    toolchain_deps_name = [d.name for d in toolchain_deps]
-    toolchain_lib_dyn_infos = [dep.dynamic for dep in toolchain_deps]
+        toolchain_deps = libs_tset.reduce("toolchain_packages")
+        toolchain_deps_name = [d.name for d in toolchain_deps]
+        toolchain_lib_dyn_infos = [dep.dynamic for dep in toolchain_deps]
 
-    all_deps = libs_tset.reduce("packages")
-    project_deps = [d for d in all_deps if d not in toolchain_deps_name]
+        all_deps = libs_tset.reduce("packages")
+        project_deps = [d for d in all_deps if d not in toolchain_deps_name]
 
-    pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
+        pkg_deps = haskell_toolchain.packages.dynamic if haskell_toolchain.packages else None
 
-    # collect all the extra library dependencies from component Haskell libraries
-    direct_extra_libs = [elib for lib in hlibs for elib in lib.extra_libraries]
+        # collect all the extra library dependencies from component Haskell libraries
+        direct_extra_libs = [elib for lib in hlibs for elib in lib.extra_libraries]
 
-    actions.dynamic_output_new(_dynamic_link_group_shared(
-        lib = lib.as_output(),
-        db = db.as_output(),
-        arg = _DynamicLinkGroupSharedOptions(
+        arg = _DynamicLinkGroupOptions(
             hlibs = hlibs,
             pkgname = pkgname,
             libname = libname,
@@ -2153,10 +2168,17 @@ def make_haskell_link_group(
             project_deps = project_deps,
             libs_tset = libs_tset,
             extra_libraries = direct_extra_libs,
-        ),
-        toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
-        pkg_deps = pkg_deps,
-    ))
+            link_style = link_style,
+            enable_profiling = enable_profiling,
+        )
+
+        actions.dynamic_output_new(_dynamic_link_group(
+            lib = lib.as_output(),
+            db = db.as_output(),
+            arg = arg,
+            toolchain_lib_dyn_infos = toolchain_lib_dyn_infos,
+            pkg_deps = pkg_deps,
+        ))
 
     return [
         DefaultInfo(default_outputs = [lib]),
@@ -2167,6 +2189,7 @@ def make_haskell_link_group(
             constituents = hlibs,
         ),
     ]
+
 
 def haskell_link_group_impl(ctx: AnalysisContext) -> list[Provider]:
     registerer = ctx.attrs._ghc_pkg_registerer[RunInfo]
