@@ -753,7 +753,6 @@ _DynamicLinkSharedOptions = record(
     project_libs = list[str],
     toolchain_libs_full = list[HaskellToolchainLibrary],
     project_libs_full = list[HaskellLibraryInfo],
-    use_argsfile_at_link = bool,
     worker_target_id = str,
 )
 
@@ -822,15 +821,12 @@ def _dynamic_link_shared_impl(
 
     link_args.add(arg.link_args)
 
-    if arg.use_argsfile_at_link:
-        link_cmd_args.append(at_argfile(
-            actions = actions,
-            name = "haskell_link_" + arg.artifact_suffix.replace("-", "_") + ".argsfile",
-            args = link_args,
-            allow_args = True,
-        ))
-    else:
-        link_cmd_args.append(link_args)
+    link_cmd_args.append(at_argfile(
+        actions = actions,
+        name = "haskell_link_" + arg.artifact_suffix.replace("-", "_") + ".argsfile",
+        args = link_args,
+        allow_args = True,
+    ))
 
     link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
     link_cmd.add("-o", lib)
@@ -968,7 +964,6 @@ def _build_haskell_lib(
                 project_libs = project_libs,
                 toolchain_libs_full = toolchain_libs_full,
                 project_libs_full = project_libs_full,
-                use_argsfile_at_link = ctx.attrs.use_argsfile_at_link,
                 worker_target_id = pkgname,
                 link_args = link_args,
             ),

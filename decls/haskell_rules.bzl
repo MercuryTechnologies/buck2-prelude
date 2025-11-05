@@ -47,9 +47,8 @@ haskell_binary = prelude_rule(
         native_common.link_style() |
         haskell_common.srcs_arg() |
         haskell_common.external_tools_arg() |
-        haskell_common.srcs_envs_arg () |
-        haskell_common.use_argsfile_at_link_arg () |
-        haskell_common.extra_libraries_arg () |
+        haskell_common.srcs_envs_arg() |
+        haskell_common.extra_libraries_arg() |
         haskell_common.compiler_flags_arg() |
         haskell_common.ghc_rts_flags_arg() |
         haskell_common.deps_arg() |
@@ -175,7 +174,6 @@ haskell_library = prelude_rule(
         haskell_common.srcs_arg() |
         haskell_common.external_tools_arg() |
         haskell_common.srcs_envs_arg() |
-        haskell_common.use_argsfile_at_link_arg() |
         haskell_common.extra_libraries_arg() |
         haskell_common.compiler_flags_arg() |
         haskell_common.ghc_rts_flags_arg() |
@@ -234,13 +232,12 @@ haskell_link_group = prelude_rule(
 
 haskell_toolchain_library = prelude_rule(
     name = "haskell_toolchain_library",
-    docs  = """
+    docs = """
        Declare a library available as part of the GHC toolchain.
     """,
     attrs = {
     },
 )
-
 
 haskell_prebuilt_library = prelude_rule(
     name = "haskell_prebuilt_library",

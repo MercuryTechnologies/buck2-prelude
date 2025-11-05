@@ -1214,7 +1214,7 @@ def _compile_module(
 
     category_prefix = "haskell_compile_" + artifact_suffix.replace("-", "_")
 
-    if not use_worker and haskell_toolchain.use_argsfile:
+    if not use_worker:
         wrapper_args_for_file.add(cmd_args(argfile(
             actions = actions,
             name = "{}_{}_ghc.argsfile".format(category_prefix, module_name),
@@ -1228,6 +1228,7 @@ def _compile_module(
             allow_args = True,
         ))
     else:
+        # TODO: Is there a reason we can't use argfiles when using the worker?
         compile_cmd_args.append(wrapper_args_for_file)
         compile_cmd_args.append(compile_args_for_file)
 
@@ -1768,37 +1769,23 @@ def compile(
     stubs_dir = ctx.actions.declare_output("stubs-" + artifact_suffix, dir = True)
 
     # collect the stubs from all modules into the stubs_dir
-    if ctx.attrs.use_argsfile_at_link:
-        stub_copy_cmd = cmd_args([
-            "bash",
-            "-euc",
-            """\
-            mkdir -p \"$0\"
-            cat $1 | while read stub; do
-              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
-            done
-            """,
-        ])
-        stub_copy_cmd.add(stubs_dir.as_output())
-        stub_copy_cmd.add(argfile(
-            actions = ctx.actions,
-            name = "haskell_stubs_" + artifact_suffix + ".argsfile",
-            args = stub_dirs,
-            allow_args = True,
-        ))
-    else:
-        stub_copy_cmd = cmd_args([
-            "bash",
-            "-euc",
-            """\
-            mkdir -p \"$0\"
-            for stub; do
-              find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
-            done
-            """,
-        ])
-        stub_copy_cmd.add(stubs_dir.as_output())
-        stub_copy_cmd.add(stub_dirs)
+    stub_copy_cmd = cmd_args([
+        "bash",
+        "-euc",
+        """\
+        mkdir -p \"$0\"
+        cat $1 | while read stub; do
+          find \"$stub\" -mindepth 1 -maxdepth 1 -exec cp -r -t \"$0\" '{}' ';'
+        done
+        """,
+    ])
+    stub_copy_cmd.add(stubs_dir.as_output())
+    stub_copy_cmd.add(argfile(
+        actions = ctx.actions,
+        name = "haskell_stubs_" + artifact_suffix + ".argsfile",
+        args = stub_dirs,
+        allow_args = True,
+    ))
 
     ctx.actions.run(
         stub_copy_cmd,

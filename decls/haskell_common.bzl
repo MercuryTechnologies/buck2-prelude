@@ -82,13 +82,6 @@ def _srcs_envs_arg():
 """),
     }
 
-def _use_argsfile_at_link_arg():
-    return {
-        "use_argsfile_at_link": attrs.bool(default = False, doc = """
-    Use response file at linking.
-"""),
-    }
-
 def _module_prefix_arg():
     return {
         "module_prefix": attrs.option(attrs.string(), default = None, doc = """
@@ -126,7 +119,6 @@ haskell_common = struct(
     scripts_arg = _scripts_arg,
     external_tools_arg = _external_tools_arg,
     srcs_envs_arg = _srcs_envs_arg,
-    use_argsfile_at_link_arg = _use_argsfile_at_link_arg,
     module_prefix_arg = _module_prefix_arg,
     strip_prefix_arg = _strip_prefix_arg,
     extra_libraries_arg = _extra_libraries_arg,
