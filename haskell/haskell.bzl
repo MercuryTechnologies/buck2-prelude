@@ -1546,9 +1546,15 @@ def _dynamic_link_binary_impl(
 
     link_args.add("-o", output)
 
+    artifact_suffix = get_artifact_suffix(arg.link_style, arg.enable_profiling)
     link_cmd = cmd_args(
         arg.haskell_toolchain.compiler,
-        link_args,
+        at_argfile(
+            actions = actions,
+            name = "haskell_link_" + artifact_suffix.replace("-", "_") + ".argsfile",
+            args = link_args,
+            allow_args = True,
+        ),
         hidden = link_cmd_hidden,
     )
 
