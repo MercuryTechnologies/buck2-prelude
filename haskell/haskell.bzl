@@ -1844,9 +1844,6 @@ def haskell_binary_impl(ctx: AnalysisContext) -> list[Provider]:
 
     if link_style == LinkStyle("shared") or link_group_info != None:
         sos_dir = "__{}__shared_libs_symlink_tree".format(ctx.label.name)
-        rpath_ref = get_rpath_origin(get_cxx_toolchain_info(ctx).linker_info.type)
-        rpath_ldflag = "-Wl,{}/{}".format(rpath_ref, sos_dir)
-        link.add("-optl", "-Wl,-rpath", "-optl", rpath_ldflag)
         symlink_dir = create_shlib_symlink_tree(
             actions = ctx.actions,
             out = sos_dir,
