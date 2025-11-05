@@ -1538,16 +1538,12 @@ def _compile_non_incr(
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
     if args.args_for_file:
-        if haskell_toolchain.use_argsfile:
-            compile_cmd.add(at_argfile(
-                actions = actions,
-                name = artifact_suffix + ".haskell_compile_argsfile",
-                args = [args.args_for_file, args.srcs],
-                allow_args = True,
-            ))
-        else:
-            compile_cmd.add(args.args_for_file)
-            compile_cmd.add(args.srcs)
+        compile_cmd.add(at_argfile(
+            actions = actions,
+            name = artifact_suffix + ".haskell_compile_argsfile",
+            args = [args.args_for_file, args.srcs],
+            allow_args = True,
+        ))
 
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
 
