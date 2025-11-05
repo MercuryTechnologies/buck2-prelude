@@ -833,7 +833,7 @@ def _dynamic_link_shared_impl(
 
     actions.run(
         link_cmd,
-        category = "haskell_link" + arg.artifact_suffix.replace("-", "_"),
+        category = "haskell_link_" + arg.artifact_suffix.replace("-", "_"),
         # explicit turn this on for local_only actions to upload their results.
         allow_cache_upload = True,
     )
