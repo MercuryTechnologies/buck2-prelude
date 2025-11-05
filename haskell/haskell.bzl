@@ -785,7 +785,6 @@ def _dynamic_link_shared_impl(
     packagedb_args.add(package_db_tset.project_as_args("package_db"))
 
     link_args = cmd_args()
-    link_cmd_args = [cmd_args(arg.haskell_toolchain.linker)]
     link_cmd_hidden = []
 
     link_args.add(arg.haskell_toolchain.linker_flags)
@@ -821,15 +820,18 @@ def _dynamic_link_shared_impl(
 
     link_args.add(arg.link_args)
 
-    link_cmd_args.append(at_argfile(
-        actions = actions,
-        name = "haskell_link_" + arg.artifact_suffix.replace("-", "_") + ".argsfile",
-        args = link_args,
-        allow_args = True,
-    ))
-
-    link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
-    link_cmd.add("-o", lib)
+    link_cmd = cmd_args(
+        arg.haskell_toolchain.linker,
+        at_argfile(
+            actions = actions,
+            name = "haskell_link_" + arg.artifact_suffix.replace("-", "_") + ".argsfile",
+            args = link_args,
+            allow_args = True,
+        ),
+        "-o",
+        lib,
+        hidden = link_cmd_hidden,
+    )
 
     actions.run(
         link_cmd,
@@ -1977,7 +1979,6 @@ def _dynamic_link_group_shared_impl(
         arg: _DynamicLinkGroupSharedOptions,
         toolchain_lib_dyn_infos: list[ResolvedDynamicValue],
         pkg_deps: ResolvedDynamicValue | None):
-    link_cmd_args = [arg.haskell_toolchain.linker]
     link_cmd_hidden = []
     link_args = cmd_args()
     link_args.add(arg.haskell_toolchain.linker_flags)
@@ -2028,15 +2029,18 @@ def _dynamic_link_group_shared_impl(
         ),
     )
 
-    link_cmd_args.append(at_argfile(
-        actions = actions,
-        name = "haskell_link_group_shared.argsfile",
-        args = link_args,
-        allow_args = True,
-    ))
-
-    link_cmd = cmd_args(link_cmd_args, hidden = link_cmd_hidden)
-    link_cmd.add("-o", lib)
+    link_cmd = cmd_args(
+        arg.haskell_toolchain.linker,
+        at_argfile(
+            actions = actions,
+            name = "haskell_link_group_shared.argsfile",
+            args = link_args,
+            allow_args = True,
+        ),
+        "-o",
+        lib,
+        hidden = link_cmd_hidden,
+    )
 
     actions.run(
         link_cmd,
