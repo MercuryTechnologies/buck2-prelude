@@ -1265,6 +1265,18 @@ def _compile_module(
 
     return module_tset
 
+def _get_module_from_map(mapped_modules, module_name):
+    module = mapped_modules.get(module_name)
+    if module == None:
+        mapped_module_names = list(mapped_modules.keys())
+        if len(mapped_module_names) > 32:
+            truncated_list = mapped_module_names[:32]
+            available_names = "{} (and {} more)".format(truncated_list, len(mapped_module_names) - 32)
+        else:
+            available_names = str(mapped_module_names)
+        fail("Can't compile module `{}` as it's not in the module map. Available module names are: {}".format(module_name, available_names))
+    return module
+
 # Compile incrementally and fill module_tsets accordingly.
 def _compile_incr(
         actions: AnalysisActions,
@@ -1280,7 +1292,7 @@ def _compile_incr(
         direct_deps_by_name: dict[str, _DirectDep],
         outputs: dict[Artifact, OutputArtifact]) -> None:
     for module_name in post_order_traversal(graph):
-        module = mapped_modules[module_name]
+        module = _get_module_from_map(mapped_modules, module_name)
         module_tsets[module_name] = _compile_module(
             actions,
             aux_deps = arg.sources_deps.get(module.source),
@@ -1541,7 +1553,7 @@ def _compile_non_incr(
     compile_cmd_hidden = []
 
     for module_name in post_order_traversal(graph):
-        module = mapped_modules[module_name]
+        module = _get_module_from_map(mapped_modules, module_name)
         module_tsets[module_name] = _make_module_tsets_non_incr(
             actions,
             module = module,
