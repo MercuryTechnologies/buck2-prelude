@@ -31,7 +31,6 @@ HaskellToolchainInfo = provider(
         "compiler_major_version": provider_field(str | None, default = None),
         "package_name_prefix": provider_field(typing.Any, default = None),
         "packager": provider_field(RunInfo),
-        "use_argsfile": provider_field(bool, default = False),
         "support_expose_package": provider_field(bool, default = False),
         "archive_contents": provider_field(typing.Any, default = None),
         "ghci_script_template": provider_field(Artifact | None, default = None),
