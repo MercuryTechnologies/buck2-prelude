@@ -140,6 +140,14 @@ _Module = record(
     prefix_dir = field(str),
 )
 
+def _get_module_outputs(
+        module: _Module,
+        outputs: dict[Artifact, OutputArtifact]) -> list[OutputArtifact]:
+    objects = [outputs[obj] for obj in module.objects]
+    his = [outputs[hi] for hi in module.interfaces]
+    hies = [outputs[hie] for hie in module.hie_files]
+    return objects + his + hies
+
 _DynamicDoCompileOptions = record(
     artifact_suffix = str,
     compiler_flags = list[typing.Any],  # Arguments.
@@ -1032,8 +1040,6 @@ def _compile_make_args(
         module: _Module,
         outputs: dict[Artifact, OutputArtifact],
         dependency_modules: CompiledModuleTSet) -> cmd_args:
-    args = cmd_args()
-
     # Provide all module dependencies to the worker for state restoration from cache, including both the current unit
     # and other library targets.
     # Topological order is necessary to ensure that no module is loaded before its dependencies are, and since this
@@ -1041,17 +1047,19 @@ def _compile_make_args(
     dep_modules = reversed(dependency_modules.project_as_json("dep_modules", ordering = "topological").traverse())
     dep_modules_file = actions.declare_output("dep-modules-{}.json".format(module_name))
     actions.write_json(dep_modules_file, dep_modules, with_inputs = True, pretty = True)
-    args.add("--dep-modules", dep_modules_file)
 
-    objects = [outputs[obj] for obj in module.objects]
-    his = [outputs[hi] for hi in module.interfaces]
-    hies = [outputs[hie] for hie in module.hie_files]
-    mod_outputs = objects + his + hies
-    args.add(cmd_args([], hidden = mod_outputs))
-
-    args.add(cmd_args(common_args.pkgname, prepend = "--unit"))
-    args.add(cmd_args(module_name, prepend = "--module", hidden = [module.source]))
-    return args
+    return cmd_args(
+        "--dep-modules",
+        dep_modules_file,
+        "--unit",
+        common_args.pkgname,
+        "--module",
+        module_name,
+        hidden = [
+            _get_module_outputs(module, outputs),
+            module.source,
+        ],
+    )
 
 # Arguments for `ghc_wrapper` or the worker needed in both modes.
 def _shared_wrapper_args(
