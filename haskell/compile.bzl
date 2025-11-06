@@ -1184,9 +1184,9 @@ def _compile_module(
         children = [cross_package_modules] + this_package_modules,
     )
 
-    dep_file = actions.declare_output("dep-{}_{}".format(module_name, artifact_suffix)).as_output()
-
-    tagged_dep_file = abi_tag.tag_artifacts(dep_file)
+    tagged_dep_file = abi_tag.tag_artifacts(
+        actions.declare_output("dep-{}_{}".format(module_name, artifact_suffix)).as_output(),
+    )
 
     # ----------------------------------------------------------------------------------------------------
 
