@@ -1267,7 +1267,7 @@ def _compile_module(
 
     return module_tset
 
-def _get_module_from_map(mapped_modules, module_name):
+def _get_module_from_map(mapped_modules: dict[str, _Module], module_name: str) -> _Module:
     module = mapped_modules.get(module_name)
     if module == None:
         mapped_module_names = list(mapped_modules.keys())
