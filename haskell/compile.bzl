@@ -1196,7 +1196,7 @@ def _compile_module(
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
-    compile_cmd_args = cmd_args(common_args.command)
+    compile_cmd_args = cmd_args()
 
     # For the make worker, options related to local package dependencies need to be omitted entirely, since it uses the
     # unit env instead of package DBs to load them.
@@ -1281,20 +1281,19 @@ def _compile_module(
         compile_cmd_args.add(wrapper_args_for_file)
         compile_cmd_args.add(compile_args_for_file)
 
-    compile_cmd = cmd_args(
-        compile_cmd_args,
-        hidden = [
-            abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
-            dependency_modules.project_as_args("abi"),
-        ],
-    )
-
     worker_args = {}
     if worker != None and use_worker:
         worker_args["exe"] = WorkerRunInfo(worker = worker)
 
     actions.run(
-        compile_cmd,
+        cmd_args(
+            common_args.command,
+            compile_cmd_args,
+            hidden = [
+                abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
+                dependency_modules.project_as_args("abi"),
+            ],
+        ),
         category = "haskell_compile_" + artifact_suffix.replace("-", "_"),
         identifier = module_name,
         dep_files = dep_files,
