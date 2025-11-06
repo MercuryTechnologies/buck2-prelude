@@ -1440,7 +1440,7 @@ def _make_module_tsets_non_incr(
         module: _Module,
         package_deps: dict[str, list[str]],
         toolchain_deps_by_name: dict[str, None],
-        direct_deps_by_name: dict[str, typing.Any],
+        direct_deps_by_name: dict[str, _DirectDep],
         name: str,
         pkgname: str) -> CompiledModuleTSet:
     toolchain_deps = []
