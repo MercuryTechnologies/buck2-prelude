@@ -1137,11 +1137,7 @@ def _compile_module(
     # These compiler arguments can be passed in a response file.
     compile_args_for_file = cmd_args(common_args.args_for_file, hidden = aux_deps or [])
 
-    compile_cmd_args = [common_args.command]
-    compile_cmd_hidden = [
-        abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
-        dependency_modules.project_as_args("abi"),
-    ]
+    compile_cmd_args = cmd_args(common_args.command)
 
     # For the make worker, options related to local package dependencies need to be omitted entirely, since it uses the
     # unit env instead of package DBs to load them.
@@ -1199,7 +1195,7 @@ def _compile_module(
             packagedb_tag = packagedb_tag,
         ))
 
-        compile_cmd_args.append(common_args.oneshot_wrapper_args)
+        compile_cmd_args.add(common_args.oneshot_wrapper_args)
 
         dep_files = {
             "abi": abi_tag,
@@ -1215,7 +1211,7 @@ def _compile_module(
             args = compile_args_for_file,
             allow_args = True,
         ), prepend = "--ghc-argsfile"))
-        compile_cmd_args.append(at_argfile(
+        compile_cmd_args.add(at_argfile(
             actions = actions,
             name = "{}_{}.argsfile".format(category_prefix, module_name),
             args = wrapper_args_for_file,
@@ -1223,10 +1219,16 @@ def _compile_module(
         ))
     else:
         # TODO: Is there a reason we can't use argfiles when using the worker?
-        compile_cmd_args.append(wrapper_args_for_file)
-        compile_cmd_args.append(compile_args_for_file)
+        compile_cmd_args.add(wrapper_args_for_file)
+        compile_cmd_args.add(compile_args_for_file)
 
-    compile_cmd = cmd_args(compile_cmd_args, hidden = compile_cmd_hidden)
+    compile_cmd = cmd_args(
+        compile_cmd_args,
+        hidden = [
+            abi_tag.tag_artifacts(dependency_modules.project_as_args("interfaces")),
+            dependency_modules.project_as_args("abi"),
+        ],
+    )
 
     if worker == None:
         worker_args = dict()
