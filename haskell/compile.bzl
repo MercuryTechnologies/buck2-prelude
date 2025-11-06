@@ -1230,12 +1230,9 @@ def _compile_module(
         ],
     )
 
-    if worker == None:
-        worker_args = dict()
-    elif use_worker:
-        worker_args = dict(exe = WorkerRunInfo(worker = worker))
-    else:
-        worker_args = dict()
+    worker_args = {}
+    if worker != None and use_worker:
+        worker_args["exe"] = WorkerRunInfo(worker = worker)
 
     actions.run(
         compile_cmd,
