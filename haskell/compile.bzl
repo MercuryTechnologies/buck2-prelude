@@ -784,6 +784,65 @@ def _common_compile_wrapper_args(
 # `buildifier` hard-errors when `...` is used.
 _DirectDep = typing.Any
 
+def _direct_dep_artifact(dep: _DirectDep) -> Artifact:
+    """Get the `Artifact` out of a `_DirectDep`.
+
+    `_DirectDep` is `Any`, so we provide type-annotated accessors for
+    `_DirectDep` fields.
+    """
+    return dep[0]
+
+def _direct_dep_compile_result(dep: _DirectDep) -> DynamicCompileResultInfo:
+    """Get the `DynamicCompileResultInfo` out of a `_DirectDep`.
+
+    `_DirectDep` is `Any`, so we provide type-annotated accessors for
+    `_DirectDep` fields.
+    """
+    return dep[1].providers[DynamicCompileResultInfo]
+
+_IndexedPackageDeps = record(
+    toolchain_deps = list[str],
+    library_deps = list[str],
+    exposed_package_modules = list[CompiledModuleTSet],
+    exposed_package_dbs = list[Artifact],
+)
+
+def _categorize_package_deps(
+        *,
+        module_name: str,
+        package_deps: dict[str, list[str]],
+        direct_deps_by_name: dict[str, _DirectDep],
+        toolchain_deps_by_name: dict[str, None]) -> _IndexedPackageDeps:
+    """
+    Arguments:
+        module_name: For error messages.
+    """
+    toolchain_deps = []
+    library_deps = []
+    exposed_package_modules = []
+    exposed_package_dbs = []
+
+    for dep_pkgname, dep_modules in package_deps.items():
+        if dep_pkgname in toolchain_deps_by_name:
+            toolchain_deps.append(dep_pkgname)
+        elif dep_pkgname in direct_deps_by_name:
+            direct_dep = direct_deps_by_name[dep_pkgname]
+
+            library_deps.append(dep_pkgname)
+            exposed_package_dbs.append(_direct_dep_artifact(direct_dep))
+
+            for dep_modname in dep_modules:
+                exposed_package_modules.append(_direct_dep_compile_result(direct_dep).modules[dep_modname])
+        else:
+            fail("Unknown library dependency '{}' for module '{}'. Add the library to the `deps` attribute".format(dep_pkgname, module_name))
+
+    return _IndexedPackageDeps(
+        toolchain_deps = toolchain_deps,
+        library_deps = library_deps,
+        exposed_package_modules = exposed_package_modules,
+        exposed_package_dbs = exposed_package_dbs,
+    )
+
 def _common_compile_module_args(
         actions: AnalysisActions,
         *,
@@ -1101,25 +1160,17 @@ def _compile_module(
     abi_tag = actions.artifact_tag()
     packagedb_tag = actions.artifact_tag()
 
-    toolchain_deps = []
-    library_deps = []
-    exposed_package_modules = []
-    exposed_package_dbs = []
-    for dep_pkgname, dep_modules in package_deps.items():
-        if dep_pkgname in toolchain_deps_by_name:
-            toolchain_deps.append(dep_pkgname)
-        elif dep_pkgname in direct_deps_by_name:
-            library_deps.append(dep_pkgname)
-            exposed_package_dbs.append(direct_deps_by_name[dep_pkgname][0])
-            for dep_modname in dep_modules:
-                exposed_package_modules.append(direct_deps_by_name[dep_pkgname][1].providers[DynamicCompileResultInfo].modules[dep_modname])
-        else:
-            fail("Unknown library dependency '{}' for module '{}'. Add the library to the `deps` attribute".format(dep_pkgname, module_name))
+    categorized_package_deps = _categorize_package_deps(
+        module_name = module_name,
+        package_deps = package_deps,
+        direct_deps_by_name = direct_deps_by_name,
+        toolchain_deps_by_name = toolchain_deps_by_name,
+    )
 
     # Transitive module dependencies from other packages.
     cross_package_modules = actions.tset(
         CompiledModuleTSet,
-        children = exposed_package_modules,
+        children = categorized_package_deps.exposed_package_modules,
     )
 
     # Transitive module dependencies from the same package.
@@ -1186,8 +1237,8 @@ def _compile_module(
             md_file = md_file,
             outputs = outputs,
             artifact_suffix = artifact_suffix,
-            library_deps = library_deps,
-            toolchain_deps = toolchain_deps,
+            library_deps = categorized_package_deps.library_deps,
+            toolchain_deps = categorized_package_deps.toolchain_deps,
             packagedb_tag = packagedb_tag,
         ))
 
@@ -1260,7 +1311,7 @@ def _compile_module(
             abi = module.hash,
             interfaces = module.interfaces,
             hie_files = module.hie_files,
-            db_deps = exposed_package_dbs,
+            db_deps = categorized_package_deps.exposed_package_dbs,
         ),
         children = [cross_package_modules] + this_package_modules,
     )
@@ -1443,27 +1494,17 @@ def _make_module_tsets_non_incr(
         direct_deps_by_name: dict[str, _DirectDep],
         name: str,
         pkgname: str) -> CompiledModuleTSet:
-    toolchain_deps = []
-    library_deps = []
-
-    exposed_package_modules = []
-    exposed_package_dbs = []
-
-    for dep_pkgname, dep_modules in package_deps.items():
-        if dep_pkgname in toolchain_deps_by_name:
-            toolchain_deps.append(dep_pkgname)
-        elif dep_pkgname in direct_deps_by_name:
-            library_deps.append(dep_pkgname)
-            exposed_package_dbs.append(direct_deps_by_name[dep_pkgname][0])
-            for dep_modname in dep_modules:
-                exposed_package_modules.append(direct_deps_by_name[dep_pkgname][1].providers[DynamicCompileResultInfo].modules[dep_modname])
-        else:
-            fail("Unknown library dependency '{}'. Add the library to the `deps` attribute".format(dep_pkgname))
+    categorized_package_deps = _categorize_package_deps(
+        module_name = name,
+        package_deps = package_deps,
+        direct_deps_by_name = direct_deps_by_name,
+        toolchain_deps_by_name = toolchain_deps_by_name,
+    )
 
     # Transitive module dependencies from other packages.
     cross_package_modules = actions.tset(
         CompiledModuleTSet,
-        children = exposed_package_modules,
+        children = categorized_package_deps.exposed_package_modules,
     )
 
     module_tsets = actions.tset(
@@ -1474,7 +1515,7 @@ def _make_module_tsets_non_incr(
             abi = module.hash,
             interfaces = module.interfaces,
             hie_files = module.hie_files,
-            db_deps = exposed_package_dbs,
+            db_deps = categorized_package_deps.exposed_package_dbs,
         ),
         children = [cross_package_modules],
     )
