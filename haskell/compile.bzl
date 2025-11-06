@@ -123,12 +123,6 @@ CompileResultInfo = record(
     module_tsets = field(DynamicValue),
 )
 
-CompileArgsInfo = record(
-    srcs = field(cmd_args),
-    args_for_cmd = field(cmd_args),
-    args_for_file = field(cmd_args),
-)
-
 PackagesInfo = record(
     exposed_package_args = cmd_args,
     packagedb_args = cmd_args,
@@ -1337,52 +1331,49 @@ def compile_args(
         target_deps_args: cmd_args,
         link_group_libs: list[HaskellLinkGroupInfo],
         pkgname = None,
-        suffix: str = "") -> CompileArgsInfo:
-    compile_cmd = cmd_args()
-    compile_cmd.add(haskell_toolchain.compiler_flags)
+        suffix: str = "") -> cmd_args:
+    args = cmd_args()
+    args.add(haskell_toolchain.compiler_flags)
 
     # Some rules pass in RTS (e.g. `+RTS ... -RTS`) options for GHC, which can't
     # be parsed when inside an argsfile.
-    compile_cmd.add(compiler_flags)
+    args.add(compiler_flags)
 
     # `extra-libraries` or other linker flags.
-    compile_cmd.add(link_args)
+    args.add(link_args)
 
-    compile_cmd.add("-fbyte-code-and-object-code")
-    compile_cmd.add("-fprefer-byte-code")
-    compile_cmd.add("-fpackage-db-byte-code")
-    compile_cmd.add("-j")
+    args.add("-fbyte-code-and-object-code")
+    args.add("-fprefer-byte-code")
+    args.add("-fpackage-db-byte-code")
+    args.add("-j")
 
-    ####
+    args.add("-no-link", "-i")
 
-    compile_args = cmd_args()
-    compile_args.add("-no-link", "-i")
-
-    compile_args.add(package_env_args)
-    compile_args.add(target_deps_args)
+    args.add(package_env_args)
+    args.add(target_deps_args)
 
     if enable_profiling:
-        compile_args.add("-prof")
+        args.add("-prof")
 
     if link_style == LinkStyle("shared"):
-        compile_args.add("-dynamic", "-fPIC")
+        args.add("-dynamic", "-fPIC")
     elif link_style == LinkStyle("static_pic"):
-        compile_args.add("-fPIC", "-fexternal-dynamic-refs")
+        args.add("-fPIC", "-fexternal-dynamic-refs")
 
     # FIXME(jadel): why do we have three copies of this code?
     if link_style in [LinkStyle("static_pic"), LinkStyle("static")]:
-        compile_args.add("-dynamic-too")
+        args.add("-dynamic-too")
 
     osuf, hisuf = output_extensions(link_style, enable_profiling)
-    compile_args.add("-osuf", osuf, "-hisuf", hisuf)
+    args.add("-osuf", osuf, "-hisuf", hisuf)
 
     if main != None:
-        compile_args.add(["-main-is", main])
+        args.add(["-main-is", main])
 
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling, suffix)
 
     for dir in ["o", "hi", "hie"]:
-        compile_args.add(
+        args.add(
             "-{}dir".format(dir),
             cmd_args([cmd_args(md_file, ignore_artifacts = True, parent = 1), "mod-" + artifact_suffix], delimiter = "/"),
         )
@@ -1403,49 +1394,39 @@ def compile_args(
         pkg_deps = None,
     )
 
-    compile_args.add(packages_info.exposed_package_args)
+    args.add(packages_info.exposed_package_args)
 
     # handle link group
 
     for lg in link_group_libs:
-        compile_args.add(cmd_args(lg.db, prepend = "-package-db"))
-        compile_args.add(cmd_args(lg.pkgname, prepend = "-package", hidden = [lg.lib]))
+        args.add(cmd_args(lg.db, prepend = "-package-db"))
+        args.add(cmd_args(lg.pkgname, prepend = "-package", hidden = [lg.lib]))
 
     # Add args from preprocess-able inputs.
     inherited_pre = cxx_inherited_preprocessor_infos(deps)
     pre = cxx_merge_cpreprocessors_actions(actions, [], inherited_pre)
     pre_args = pre.set.project_as_args("args")
-    compile_args.add(cmd_args(pre_args, format = "-optP={}"))
+    args.add(cmd_args(pre_args, format = "-optP={}"))
 
-    compile_args.add(cmd_args(
+    args.add(cmd_args(
         external_tool_paths,
         format = "--bin-exe={}",
     ))
 
     if pkgname:
-        compile_args.add(["-this-unit-id", pkgname])
+        args.add(["-this-unit-id", pkgname])
 
-    arg_srcs = []
-    hidden_srcs = []
     for (path, src) in srcs_to_pairs(sources):
         # hs-boot files aren't expected to be an argument to compiler but does need
         # to be included in the directory of the associated src file
         if is_haskell_src(path):
-            arg_srcs.append(src)
+            args.add(src)
         else:
-            hidden_srcs.append(src)
-    srcs = cmd_args(
-        arg_srcs,
-        hidden = hidden_srcs,
-    )
+            args.add(hidden = src)
 
     producing_indices = "-fwrite-ide-info" in compiler_flags
 
-    return CompileArgsInfo(
-        srcs = srcs,
-        args_for_cmd = compile_cmd,
-        args_for_file = compile_args,
-    )
+    return args
 
 def _make_module_tsets_non_incr(
         actions: AnalysisActions,
@@ -1510,44 +1491,31 @@ def _compile_non_incr(
     link_style = arg.link_style
     enable_profiling = arg.enable_profiling
 
-    compile_cmd = cmd_args(arg.ghc_wrapper, hidden = outputs.values())
-    compile_cmd.add("--ghc", haskell_toolchain.compiler)
-
-    args = compile_args(
-        actions,
-        haskell_toolchain = haskell_toolchain,
-        md_file = arg.md_file,
-        compiler_flags = arg.compiler_flags,
-        main = arg.main,
-        deps = arg.deps,
-        sources = arg.sources,
-        external_tool_paths = arg.external_tool_paths,
-        link_style = link_style,
-        link_args = arg.link_args,
-        direct_deps_link_info = arg.direct_deps_link_info,
-        haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
-        enable_profiling = enable_profiling,
-        package_env_args = common_args.package_env_args,
-        target_deps_args = common_args.target_deps_args,
-        link_group_libs = arg.link_group_libs,
-        pkgname = arg.pkgname,
+    args = cmd_args(hidden = outputs.values())
+    args.add("--ghc", haskell_toolchain.compiler)
+    args.add(
+        compile_args(
+            actions,
+            haskell_toolchain = haskell_toolchain,
+            md_file = arg.md_file,
+            compiler_flags = arg.compiler_flags,
+            main = arg.main,
+            deps = arg.deps,
+            sources = arg.sources,
+            external_tool_paths = arg.external_tool_paths,
+            link_style = link_style,
+            link_args = arg.link_args,
+            direct_deps_link_info = arg.direct_deps_link_info,
+            haskell_direct_deps_lib_infos = arg.haskell_direct_deps_lib_infos,
+            enable_profiling = enable_profiling,
+            package_env_args = common_args.package_env_args,
+            target_deps_args = common_args.target_deps_args,
+            link_group_libs = arg.link_group_libs,
+            pkgname = arg.pkgname,
+        ),
     )
 
-    compile_cmd.add(args.args_for_cmd)
-
     artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
-
-    if args.args_for_file:
-        compile_cmd.add(at_argfile(
-            actions = actions,
-            name = artifact_suffix + ".haskell_compile_argsfile",
-            args = [args.args_for_file, args.srcs],
-            allow_args = True,
-        ))
-
-    artifact_suffix = get_artifact_suffix(link_style, enable_profiling)
-
-    compile_cmd_hidden = []
 
     for module_name in post_order_traversal(graph):
         module = _get_module_from_map(mapped_modules, module_name)
@@ -1561,11 +1529,21 @@ def _compile_non_incr(
             pkgname = arg.pkgname,
         )
         for deps in module_tsets[module_name].children:
-            compile_cmd_hidden.append(deps.project_as_args("interfaces"))
+            args.add(cmd_args(hidden = deps.project_as_args("interfaces")))
+
+    category = "haskell_compile_" + artifact_suffix.replace("-", "_")
 
     actions.run(
-        cmd_args(compile_cmd, hidden = compile_cmd_hidden),
-        category = "haskell_compile_" + artifact_suffix.replace("-", "_"),
+        cmd_args(
+            arg.ghc_wrapper,
+            at_argfile(
+                actions = actions,
+                name = "{}.argsfile".format(category),
+                args = args,
+                allow_args = True,
+            ),
+        ),
+        category = category,
         # We can't use no_outputs_cleanup because GHC's recompilation checking
         # is based on file timestamps, and Buck doesn't maintain timestamps when
         # artifacts may come from RE.
